@@ -23,6 +23,91 @@ popd
 ```
 ### main.c ###
 ```c
+#define STB_IMAGE_IMPLEMENTATION
+#include "w:/libs/stb_image.h"
+
+#include "w:/libs/xlibs/xrender.h"
+
+global XFont font;
+global XSprite white;
+global Stack_T *batch;
+
+LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+
+XWINMAIN()
+{
+    XRendConfig rendconfig = {
+        window_proc, WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0,
+        L"My window", eme4f, ini2f(0,0), ini2f(400,400),
+        true, 1024, 10000, 4096, 256,
+    };
+    xrendinit(rendconfig); // Init XRender
+    
+    XWinConfig winconfig = {
+        LoadCursor(NULL, IDC_ARROW),
+        xrend.wh, xrend.wd, xrend.td,
+    };
+    xwininit(winconfig);   // Init XWindows
+    
+    // Load resources
+    font = xfont(L"fonts/inconsolata.ttf", L"Inconsolata", 32);
+    white = xspritepng(L"images/white.png", false);
+    batch = xbatch(4096);
+    
+    // Main loop
+    while (xrend.run)
+    {
+        // Handle Windows messages
+        MSG message;
+        while (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
+        {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        
+        // Beginning of frame
+        
+        // Do stuff ...
+        
+        xline(ini2f(0,0), xwin.mouse.pos, cob4f, 0);
+        
+        // Do stuff ...
+        
+        // End of frame
+        
+        xwinupdate();  // Update XWindows
+        xrendupdate(); // Update XRender
+    }
+    
+    xfontfree(font); // Free XFont
+    xrendfini();     // Free XRender resources
+}
+
+void xrendresized(void)
+{
+}
+
+LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
+{
+    LRESULT result = 0;
+    switch (message) {
+    	/* XWNDPROC macro handles the following messages: WM_SETCURSOR, WM_DESTROY, WM_CLOSE
+    	   WM_CHAR, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_LBUTTONDOWN
+    	   WM_RBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONUP. Which means you can't redefine them. If you
+    	   need to, look in xwindows.h to see the definition of XWNDPROC so you can copypaste that
+    	   and handle the messages yourself.  */
+        XWNDPROC;
+
+        // Handle other messages
+        
+        default:
+        {
+            result = DefWindowProcW(window, message, wParam, lParam);
+        } break;
+    }
+    return result;
+}
+
 ```
 
 ## API Reference ##
@@ -89,6 +174,7 @@ void xpathabsascii (char *dest, u32 destSize, char *fileName);
 ```
 
 ## Drawing strokes example ##
+TODO: Update code (old not working)
 ```c
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
