@@ -13,7 +13,6 @@
 #include "xlist.h"
 #include "xtable.h"
 #include "xwindows.h"
-#include "stb_image.h"
 
 /* =========================================================================
    DATA TYPES
@@ -179,8 +178,8 @@ typedef union
     XKey all[35];
     struct {
         XKey up, left, down, right,
-             backspace, alt, control, space, f1,
-             a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z;
+        backspace, alt, control, space, f1,
+        a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z;
     };
 } XKeys;
 
@@ -210,7 +209,7 @@ struct XContext {
     XSpriteAtlas sa;
     XKeys key;
     XMouse mouse;
-
+    
     Stack_T lg, sgs[32];
     
     IDXGISwapChain *swc;
@@ -230,11 +229,11 @@ struct XContext {
     ID3D11InputLayout *sil, *lil;
     ID3D11Buffer *svb, *lvb, *vcb;
     ID3D11ShaderResourceView *asrv; 
-
+    
     D3D11_DEPTH_STENCIL_VIEW_DESC dsvd;
     D3D11_TEXTURE2D_DESC dsbd; 
     D3D_FEATURE_LEVEL fl[8];
-
+    
     WAVEFORMATEX wf;
     IDirectSound8 *dsound;
     IDirectSoundBuffer *abs[32];
@@ -312,14 +311,14 @@ XContext ctx;
 void xpathabs(wchar_t *dst, u32 dstsize, wchar_t *filename)
 {
     wchar_t *slashpos, *at, exepath[MAX_PATH], dir[260];
-
+    
     xpath(exepath, MAX_PATH);
-
+    
     slashpos = 0;
     at = exepath;
     while (*at++)
         if (*at == '\\' || *at == '/')
-            slashpos = at;
+        slashpos = at;
     
     xstrcps(dir, 260, exepath, (u32)(slashpos - exepath));
     _snwprintf_s(dst, dstsize, _TRUNCATE, L"%s\\%s", dir, filename);
@@ -334,7 +333,7 @@ void xpathabsascii(char *dst, u32 dstsize, char *filename)
     at = exepath;
     while (*at++)
         if (*at == '\\' || *at == '/')
-            slashpos = at;
+        slashpos = at;
     
     xstrcpsascii(dir, 260, exepath, (u32)(slashpos - exepath));
     _snprintf_s(dst, dstsize, _TRUNCATE, "%s\\%s", dir, filename);
@@ -419,7 +418,7 @@ u8 *xpng(wchar_t *path, v2i *dim, bool premulalpha)
 	}
 	else
         *dim = ini2i(0,0);
-
+    
 	return r;
 }
 
@@ -453,7 +452,7 @@ XSprite xspritebytes(u8 *b, v2i dim)
     
     m = 1;
     a = &ctx.sa;
-
+    
     if ((a->at.x + dim.x + m) > a->size)
         a->at = ini2i(0, a->bottom);
     
@@ -536,9 +535,9 @@ XFont xfont(wchar_t *path, wchar_t *name, int heightpoints)
     assert(temp == 1);
     
     r.handle = CreateFontW(xfontheight(heightpoints), 
-        0, 0, 0, FW_NORMAL, false, false, false, DEFAULT_CHARSET,
-        OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-        DEFAULT_PITCH, name);
+                           0, 0, 0, FW_NORMAL, false, false, false, DEFAULT_CHARSET,
+                           OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                           DEFAULT_PITCH, name);
     assert(r.handle && r.handle != INVALID_HANDLE_VALUE);
     
     BITMAPINFO info = xbmpinfo(ctx.gms, -ctx.gms);
@@ -718,7 +717,7 @@ void xpush_line_command(v2f a, v2f b, v4f color, f32 sort)
 }
 
 void xpush_rect_command(Stack_T *group, v2f pos, v2f dim, rect2f uvs, 
-    v4f color, v2f pivot, f32 rot, f32 sort)
+                        v4f color, v2f pivot, f32 rot, f32 sort)
 {
     XSpriteCommand c = 
     {
@@ -935,7 +934,7 @@ LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
         case WM_MOUSEWHEEL:
         {
             ctx.mouse.wheel = ((f32)GET_WHEEL_DELTA_WPARAM(wParam) / 
-                (f32)WHEEL_DELTA);
+                               (f32)WHEEL_DELTA);
         } break;
         
         case WM_KEYDOWN:
@@ -1725,7 +1724,7 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev,
     ctx.wd=ini2f((f32)(size.right-size.left), (f32)(size.bottom-size.top));
     
     ctx.wh = CreateWindowExW(ctx.wexs, L"synergy_window_class", ctx.wt, ctx.wcs, 
-                              (s32)ctx.wp.x, (s32)ctx.wp.y, (s32)ctx.wd.x, (s32)ctx.wd.y, NULL, NULL, hInst, NULL);
+                             (s32)ctx.wp.x, (s32)ctx.wp.y, (s32)ctx.wd.x, (s32)ctx.wd.y, NULL, NULL, hInst, NULL);
     if (ctx.wh == NULL)
         exit(1);
     
@@ -1747,8 +1746,8 @@ int APIENTRY WinMain(HINSTANCE hInst, HINSTANCE hInstPrev,
     
     xfeatureleves(ctx.fl, &ctx.flc);
     if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 
-        D3D11_CREATE_DEVICE_DEBUG, ctx.fl, ctx.flc, D3D11_SDK_VERSION, &scd, &ctx.swc,
-        &ctx.dvc, NULL, &ctx.ctx)))
+                                             D3D11_CREATE_DEVICE_DEBUG, ctx.fl, ctx.flc, D3D11_SDK_VERSION, &scd, &ctx.swc,
+                                             &ctx.dvc, NULL, &ctx.ctx)))
         exit(1);
     
     if (FAILED(ID3D11Device_QueryInterface(ctx.dvc, &IID_ID3D11Debug, (void **)&ctx.dbg)))

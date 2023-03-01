@@ -5,10 +5,23 @@ Extra libraries for C language (In Progress)
 * stb_image.h https://github.com/nothings/stb
 
 ## Bare bones example ##
-```c
-```
 
 ## Basic usage ##
+### build.bat ###
+```batch
+@echo off
+
+set warn=-wd4189 -wd4100 -wd4201 -wd4042 -wd4115
+
+IF NOT EXIST bin mkdir bin
+
+cls
+
+pushd bin
+cl -Z7 -FC -W4 %warn% -nologo ../main.c
+popd
+```
+### main.c ###
 ```c
 ```
 
@@ -16,19 +29,19 @@ Extra libraries for C language (In Progress)
 
 ### Main ###
 ```c
-void xinitialize();
-void xshutdown();
-void xconfig();
-void xupdate();
-void xresized();
+void xinitialize (void);
+void xshutdown   (void);
+void xconfig     (void);
+void xupdate     (void);
+void xresized    (void);
 ```
 ### Config ###
 ```c
-void xwindow  (s32 x, s32 y, s32 w, s32 h, wchar_t *title);
-void xwinstyle(u32 windowClassStyle, u32 windowClassExStyle);
-void xtopdown (bool topDown);
-void xclear   (v4f color);
-v2   xmonitor ();
+void xwindow   (s32 x, s32 y, s32 w, s32 h, wchar_t *title);
+void xwinstyle (u32 style, u32 exstyle);
+void xtopdown  (bool topdown);
+void xclear    (v4f color);
+v2f  xmonitor  (void);
 ```
 ### Rendering ###
 ```c
@@ -36,9 +49,9 @@ Stack_T* xbatch       (void);
 u8*      xatlasbytes  (void);
 XSprite  xspritebytes (u8* bytes, s32  width, s32 height);
 XSprite  xspritepng   (wchar_t* path, bool premul);
-Font     xfont        (wchar_t* path, wchar_t *name, s32 height);
-Sprite   xglyphsprite (  XFont  font, wchar_t *c, rect2f *tightbounds, s32 *tightdescent);
-s32      xfontheight  (    s32  pointheight);
+XFont    xfont        (wchar_t* path, wchar_t *name, s32 height);
+XSprite  xglyphsprite (XFont font, wchar_t *c, rect2f *tightbounds, s32 *tightdescent);
+s32      xfontheight  (s32 pointheight);
 void     xfontfree    (XFont font);
 v2f      xspritesize  (XSprite sprite);
 void     xatlasupdate (u8* data);
@@ -56,90 +69,93 @@ f32  xstring   (Stack_T* batch, XFont font, wchar_t *s, v2f pos, v4f color, f32 
 ```
 ### File IO ###
 ```c
-File xfileread(wchar_t *filePath);
-bool xfilewrite(wchar_t *filePath, wchar_t *data, u32 size);
-u8 *xpng(wchar_t *filePath, u32 *width, u32 *height, bool premulAlpha);
+XFile xfileread  (wchar_t *path);
+bool  xfilewrite (wchar_t *path, wchar_t *data, u32 size);
+u8*   xpng       (wchar_t *path, u32 *width, u32 *height, bool premul);
 ```
 ### GUI ###
 ```c
-bool xdraggedhandle(v2 p, f32 maxDist, void *address, bool *hover, v2 *delta);
+bool xdraggedhandle (v2 p, f32 maxDist, void *address, bool *hover, v2 *delta);
 ```
 ### Other ###
 ```c
-void xcbcopy(wchar_t *text);
-s32  xcbpaste(wchar_t *text, int maxLength);
-void xpath(wchar_t *path, u32 size);
-void xpathabs(wchar_t *dest, u32 destSize, wchar_t *fileName);
-void xpathascii(char *path, u32 size);
-void xpathabsascii(char *dest, u32 destSize, char *fileName);
+void xcbcopy  (wchar_t *text);
+s32  xcbpaste (wchar_t *text, int maxLength);
+void xpath    (wchar_t *path, u32 size);
+void xpathabs (wchar_t *dest, u32 destSize, wchar_t *fileName);
+
+void xpathascii    (char *path, u32 size);
+void xpathabsascii (char *dest, u32 destSize, char *fileName);
 ```
 
 ## Drawing strokes example ##
-TODO: Update with new names (Old lib name was Synergy)
 ```c
-#include "synergy.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
-global Sprite white, circle128;
-global Font font;
-global Stack_T *sg, strokes;
-global v2 dragp;
+#include "xlibs\xrender.h"
+
+global XSprite white, circle128;
+global XFont font;
+global Stack_T *batch, strokes;
+global v2f dragp;
 global bool instroke;
 
-void Syn_config()
+void xconfig()
 {
-	Syn_set_window(0, 0, 800, 600, L"My window");
-	Syn_set_clear_color(Color_rgba(.2f,.2f,.2f,1));
+	xwindow(0, 0, 800, 600, L"My window");
+	xclear(ini4f(.2f,.2f,.2f,1));
 }
 
-void Syn_init()
+void xinitialize()
 {
 	HCURSOR ca;
     
 	ca = LoadCursor(NULL, IDC_ARROW);
 	SetCursor(ca);
 	
-	white = Sprite_from_png(L"images/white.png", false);
-	circle128 = Sprite_from_png(L"images/circle128.png", false);
-
-	font = Font_new(L"fonts/Inconsolata-Regular.ttf", L"Inconsolata", 32);
-
+	white = xspritepng(L"images/white.png", false);
+	circle128 = xspritepng(L"images/circle128.png", false);
+    
+	font = xfont(L"fonts/Inconsolata-Regular.ttf", L"Inconsolata", 32);
+    
 	strokes = Stack_new(8, sizeof(Stack_T));
-	sg = SpriteGroup_new(4096);
+	batch = xbatch(4096);
 }
 
-void Syn_update()
+void xupdate()
 {
-	v2 a, b;
+	v2f a, b;
 	s32 i;
-	Mouse m;
-
-	m = syn->mouse;
-
+	XMouse m;
+    
+	m = ctx.mouse;
+    
 	if (!m.dragging && m.left.pressed)
 		dragp = m.pos;
-
-	if (!syn->key.control.down && syn->mouse.dragging) {
+    
+	if (!ctx.key.control.down && m.dragging) {
 		if (!instroke) {
 			Stack_T newstack = {0};
 			Stack_push(&strokes, &newstack);
 			instroke = true;
 		}
-		v2 diff = v2_sub(m.pos, dragp);
+		v2f diff = sub2f(m.pos, dragp);
         
-		if (v2_length(diff)>40) {
+		if (len2f(diff)>40) {
 			Stack_T *top = Stack_peek(strokes); 
 			if (top->storage == 0)
-				*top = Stack_new(8, sizeof(v2));
+				*top = Stack_new(8, sizeof(v2f));
 			Stack_push(top, &m.pos);
 			dragp = m.pos;
 		}
-		Draw_sprite(sg, circle128, dragp, V2(5,5), Color_rgba(1,0,0,1), V2(0,0), 0, 0);
-        	Draw_sprite(sg, circle128, m.pos, V2(5,5), Color_rgba(0,1,0,1), V2(0,0), 0, 0);
+		xsprite(batch, circle128, dragp, ini2f(5,5), ini4f(1,0,0,1), ini2f(0,0), 0, 0);
+        xsprite(batch, circle128, m.pos, ini2f(5,5), ini4f(0,1,0,1), ini2f(0,0), 0, 0);
 	}
 	else
 		instroke = false;
 	
-	if (syn->key.control.down && syn->mouse.left.pressed) {
+	if (ctx.key.control.down && m.left.pressed) {
 		Stack_T *top = Stack_peek(strokes);
 		if (top->top>0)
 			Stack_pop(top);
@@ -156,31 +172,30 @@ void Syn_update()
 	for (s32 j=0; j<strokes.top; ++j) {
 		Stack_T *s = Stack_get(strokes, j);
 		for (i=0; i<s->top-1; ++i) {
-			a = *((v2 *)(Stack_get(*s, i)));
-			b = *((v2 *)(Stack_get(*s, i+1)));
-			Draw_stroke(a, b, Color_rgba(1,1,1,1), 5, 0);
+			a = *((v2f *)(Stack_get(*s, i)));
+			b = *((v2f *)(Stack_get(*s, i+1)));
+			xstroke(a, b, ini4f(1,1,1,1), 5, 0);
 		}
 	}
-	wchar_t *s = String_from_int(Alloc_count);
-	Draw_string(sg, font, s, V2(0,0), Color_rgba(1,0,0,1), V2(0,0), 0, 0, true);
-	Alloc_free(s);
+	wchar_t *s = xstrfromint(Alloc_count);
+	xstring(batch, font, s, ini2f(0,0), ini4f(1,0,0,1), ini2f(0,0), 0, 0, true);
+	xfree(s);
 }
 
-void Syn_resized()
+void xresized()
 {
 	// Window was resized
 }
 
-void Syn_fini()
+void xshutdown()
 {
 	for (s32 i=0; i<strokes.top; ++i)
 		Stack_free(Stack_get(strokes, i));
 	Stack_free(&strokes);
-	Alloc_free(circle128);
-	Alloc_free(white);
-	Font_free(font);
+	xfontfree(font);
 }
 ```
+
 TODO: Update all the rest of the APIs to use new names (Old names were mystic inspired)
 # Nexus
 Memory management library for C

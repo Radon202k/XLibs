@@ -3,7 +3,6 @@
 
 #define COBJMACROS
 #define WIN32_LEAN_AND_MEAN
-#define STB_IMAGE_IMPLEMENTATION
 
 #include <windows.h>
 #include <windowsx.h>
@@ -83,9 +82,9 @@ D3D11_BLEND_DESC xblenddesc()
         false,
         false,
     };
-
+    
     r.RenderTarget[0] = xtargetblenddesc();
-
+    
     return r;   
 }
 
@@ -139,11 +138,11 @@ BITMAPINFO xbmpinfo(int width, int height)
     BITMAPINFOHEADER h = {
         sizeof(h), width, -height, 1, 32
     };
-
+    
     BITMAPINFO r = {
         h
     };
-
+    
     return r;
 }
 
@@ -168,15 +167,15 @@ D3D11_DEPTH_STENCIL_VIEW_DESC xdsviewdesc(DXGI_FORMAT format, D3D11_DSV_DIMENSIO
     D3D11_TEX2D_DSV t = {
         0
     };
-
+    
     D3D11_DEPTH_STENCIL_VIEW_DESC r = {
         format, dim,
     };
-
+    
     if (dim == D3D11_DSV_DIMENSION_TEXTURE2D) {
         r.Texture2D = t;
     } 
-
+    
     return r;
 }
 
@@ -192,7 +191,7 @@ D3D11_SHADER_RESOURCE_VIEW_DESC xshadresview(DXGI_FORMAT format, D3D11_SRV_DIMEN
         r.Texture2D.MostDetailedMip = 0;
         r.Texture2D.MipLevels = 1;
     }
-
+    
     return r;
 }
 
