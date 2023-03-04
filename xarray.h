@@ -6,20 +6,22 @@ typedef struct T T;
 
 struct T
 {
-	s32 size;
-	s32 stride;
+	s32 size, stride, top;
 	u8* storage;
 };
 
-T Array_new(s32 length, s32 stride);
-void Array_free(T *arr);
-void Array_set(T arr, s32 i, void* data);
-void* Array_get(T arr, s32 i);
-
-T Array_copy(T arr);
-void Array_resize(T* arr, s32 newsize);
-s32 Array_length(T arr);
-void* Array_find(T arr, bool cmp(void *elem));
+T     Array_new    (s32 length, s32 stride);
+void  Array_free   (T *arr);
+void  Array_set    (T arr, s32 i, void* data);
+void* Array_get    (T arr, s32 i);
+void  Array_push   (T* arr, void* data);
+void* Array_pop    (T* arr);
+void* Array_remove (T* arr, s32 i);
+T     Array_copy   (T arr);
+void  Array_resize (T* arr, s32 newsize);
+s32   Array_length (T arr);
+void* Array_find   (T arr, bool cmp(void *elem));
+void  Array_toarray(T arr, void *dst, s32 *n);
 // T Array_slice(T arr, s32 start, s32 end);
 // s32 Array_unshift(T arr, void* x, ...);
 // void Array_reverse(T arr);
@@ -50,6 +52,7 @@ T Array_new(s32 l, s32 s)
 	r.size = l * s;
 	r.stride = s;
 	r.storage = xalloc(r.size);
+	r.top = 0;
 	return r;
 }
 
@@ -73,7 +76,29 @@ void* Array_find(T a, bool cmp(void* e))
 void Array_set(T a, s32 i, void* d)
 {
 	assert(i >= 0 && i < Array_length(a));
-	xcopy(a.storage + i*a.stride, d, a.stride);
+	xcopy((u8 *)a.storage + i*a.stride, d, a.stride);
+}
+
+void Array_push(T* arr, void* data)
+{
+	if (arr->top >= Array_length(*arr) - 2)
+		Array_resize(arr, arr->size * 2);
+	Array_set(*arr, arr->top++, data);
+}
+
+void* Array_pop(T* arr)
+{
+	assert(arr->top > 0);
+	void* r = Array_get(*arr, --arr->top);
+	return r;
+}
+
+void* Array_remove(T* arr, s32 i)
+{
+	assert(arr->top > 0);
+	void* r = Array_get(*arr, i);
+	Array_set(*arr, i, Array_get(*arr, --arr->top));
+	return r;
 }
 
 void* Array_get(T a, s32 i)
@@ -85,14 +110,13 @@ void* Array_get(T a, s32 i)
 T Array_copy(T a)
 {
 	T r;
-	s32 i;
     
 	r.size = a.size;
 	r.stride = a.stride;
+	r.top = a.top;
 	r.storage = xalloc(r.size);
-	for (i = 0; i < Array_length(a); ++i)
-		Array_set(r, i, Array_get(a, i));
-    return r;
+	xcopy(r.storage, a.storage, r.size);
+	return r;
 }
 
 void Array_resize(T* a, s32 ns)
@@ -101,11 +125,10 @@ void Array_resize(T* a, s32 ns)
     
 	r.size = ns;
 	r.stride = a->stride;
-	r.storage = xalloc(r.size);
-	r=Array_copy(*a);
-    
-	Array_free(a);
-    
+	r.top = a->top;
+	r.storage = xalloc(ns);
+	xcopy(r.storage, a->storage, a->size);
+	xfree(a->storage);
 	*a = r;
 }
 
@@ -113,6 +136,13 @@ s32 Array_length(T a)
 {
 	assert(a.size >= 0 && a.stride >= 0 && a.stride <= a.size);
 	return a.size / a.stride;
+}
+
+void Array_toarray(T arr, void **dst, s32 *n)
+{
+	*dst = xalloc(arr.top * arr.stride);
+	xcopy(*dst, arr.storage, arr.top * arr.stride);
+	*n = arr.top;
 }
 
 #undef T

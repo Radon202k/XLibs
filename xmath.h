@@ -31,6 +31,9 @@ s32 rndi(s32 a, s32 b);
    FLOAT
    ========================================================================= */
 
+#define maxf(a, b) (((a)>(b)) ? (a) : (b))
+#define minf(a, b) (((a)>(b)) ? (b) : (a))
+
 f32 mapf(f32 a1, f32 a2, f32 s, f32 b1, f32 b2);
 f32 lrpf(f32 a, f32 t, f32 b);
 f32 rndf(f32 a, f32 b);
@@ -60,14 +63,87 @@ v2f  ini2fs(s32 x, s32 y);
 v2f *new2f (f32 x, f32 y);
 v2f  add2f (v2f a, v2f b);
 v2f  sub2f (v2f a, v2f b);
+v2f  neg2f (v2f v);
 v2f  mul2f (f32 k, v2f a);
 v2f  nrm2f (v2f a);
 v2f  rnd2f (v2f a, v2f b);
 f32  dot2f (v2f a, v2f b);
 f32  lsq2f (v2f a);
 f32  len2f (v2f a);
+v2f  rot2f (v2f v, f32 a);
 void padd2f(v2f *d, v2f v);
 void psub2f(v2f *d, v2f v);
+
+
+typedef struct
+{
+    v2f center;
+    f32 radius;
+} Circlef;
+
+typedef struct
+{
+    s32 n;
+    v2f *vertices;
+} ConvexPolygonf;
+
+bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection) {
+    v2f r = { p2.x - p1.x, p2.y - p1.y };
+    v2f s = { q2.x - q1.x, q2.y - q1.y };
+    float rxs = r.x * s.y - r.y * s.x;
+    v2f qp = { q1.x - p1.x, q1.y - p1.y };
+    float t = (qp.x * s.y - qp.y * s.x) / rxs;
+    float u = (qp.x * r.y - qp.y * r.x) / rxs;
+    if (rxs == 0 || t < 0 || t > 1 || u < 0 || u > 1)
+        return false; // No intersection
+    else {
+        intersection->x = p1.x + t * r.x;
+        intersection->y = p1.y + t * r.y;
+        return true; // Intersection found
+    }
+}
+
+inline bool circlef_vs_circlef(Circlef A, Circlef B)
+{
+    f32 distsq = lsq2f(sub2f(B.center, A.center));
+    
+    f32 radii = A.radius + B.radius;
+    f32 radiisq = radii * radii;
+
+    return (distsq < radiisq);
+}
+
+inline f32 circlef_vs_circlef_dist(Circlef A, Circlef B)
+{
+    return maxf(A.radius + B.radius - len2f(sub2f(A.center, B.center)), 0);
+}
+
+inline void circlef_vs_circlef_witness(Circlef A, Circlef B, v2f *p1, v2f *p2)
+{
+    v2f v = nrm2f(sub2f(A.center, B.center));
+    *p1 = sub2f(A.center, mul2f(A.radius, v));
+    *p2 = add2f(B.center, mul2f(B.radius, v));
+}
+
+bool circlef_vs_ngonf(Circlef circle, ConvexPolygonf polygon)
+{
+    // Cast a ray from the center of the circle to the right
+    v2f ray_origin = circle.center;
+    v2f ray_direction = { 1.0f, 0.0f };
+    v2f ray_endpoint = { ray_origin.x + 2.0f * circle.radius, ray_origin.y };
+    
+    int num_intersections = 0;
+    // Check if the ray intersects with any of the polygon edges
+    for (int i = 0; i < polygon.n; i++) {
+        v2f edge_start = polygon.vertices[i];
+        v2f edge_end = polygon.vertices[(i + 1) % polygon.n];
+        v2f intersection_point;
+        if (line_vs_line(ray_origin, ray_endpoint, edge_start, edge_end, &intersection_point))
+            num_intersections++;
+    }
+    
+    return (num_intersections % 2 == 1);
+}
 
 /* =========================================================================
    VECTOR 2 INT
@@ -116,6 +192,11 @@ union v3f
         f32 y;
         f32 z;
     };
+    struct
+    {
+        v2f xy;
+        f32 ignored0;
+    };
 };
 
 v3f  bez3f (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
@@ -146,6 +227,11 @@ union v3i
         s32 x;
         s32 y;
         s32 z;
+    };
+    struct
+    {
+        v2i xy;
+        s32 ignored0;
     };
 };
 
@@ -390,7 +476,7 @@ inline v2f ini2fs(s32 x, s32 y)
 
 inline v2f *new2f(f32 x, f32 y)
 {
-    v2f *r = xalloc(sizeof *r);
+    v2f *r = (v2f *)xalloc(sizeof *r);
     *r = ini2f(x,y);
     return r;
 }
@@ -435,6 +521,16 @@ inline v2f sub2f(v2f a, v2f b)
     return r;
 }
 
+inline v2f neg2f(v2f v)
+{
+    v2f r =
+    {
+        -v.x,
+        -v.y,
+    };
+    return r;
+}
+
 inline v2f mul2f(f32 k, v2f a)
 {
     v2f r = 
@@ -451,14 +547,24 @@ inline f32 dot2f(v2f a, v2f b)
     return result;
 }
 
-inline f32 len2f(v2f a)
+inline f32 lsq2f(v2f a)
 {
     return dot2f(a, a);
 }
 
-inline f32 lsq2f(v2f a)
+inline f32 len2f(v2f a)
 {
-    return sqrtf(len2f(a));
+    return sqrtf(lsq2f(a));
+}
+
+void padd2f(v2f* d, v2f v)
+{
+    *d = add2f(*d, v);
+}
+
+void psub2f(v2f* d, v2f v)
+{
+    *d = sub2f(*d, v);
 }
 
 inline v2f nrm2f(v2f a)
@@ -472,6 +578,27 @@ inline v2f lrp2f(v2f a, f32 t, v2f b)
     {
         lrpf(a.x, t, b.x),
         lrpf(a.y, t, b.y),
+    };
+    return r;
+}
+
+inline v2f rnd2f(v2f a, v2f b)
+{
+    v2f r =
+    {
+        rndf(a.x, b.x),
+        rndf(a.y, b.y),
+    };
+    return r;
+}
+
+inline v2f rot2f(v2f v, f32 a)
+{
+    a = radf(a);
+    v2f r =
+    {
+        cosf(a) * v.x - sinf(a) * v.y,
+        sinf(a) * v.x + cosf(a) * v.y,
     };
     return r;
 }

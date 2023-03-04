@@ -26,15 +26,12 @@ typedef struct
 {
     HCURSOR cursor;
     HWND winhandle;
-    v2f windim;
-    bool topdown;
-
 } XWinConfig;
 
 void xwininit(XWinConfig config);
 
 DXGI_RATIONAL dxgiratio(DWORD numerator, DWORD denominator);
-BITMAPINFO bmpinfo(int width, int height);
+BITMAPINFO xbmpinfo(int width, int height);
 
 void xcbcopy(wchar_t *text);
 s32 xcbpaste(wchar_t *text, int maxLength);
@@ -55,8 +52,8 @@ typedef union
     XKey all[35];
     struct {
         XKey up, left, down, right,
-            backspace, alt, control, space, f1,
-            a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z;
+        backspace, alt, control, space, f1,
+        a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z;
     };
 } XKeys;
 
@@ -84,9 +81,9 @@ typedef struct
     XMouse mouse;
     wchar_t ic;
     HWND wh;
-    v2f wd;
-    bool td;
     HCURSOR ch;
+    u64 pf;
+    
 } XWindows;
 
 global XWindows xwin;
@@ -94,9 +91,11 @@ global XWindows xwin;
 void xwininit(XWinConfig config)
 {
     xwin.wh = config.winhandle;
-    xwin.wd = config.windim;
-    xwin.td = config.topdown;
     xwin.ch = config.cursor;
+    
+    LARGE_INTEGER pf;
+    QueryPerformanceFrequency(&pf);
+    xwin.pf = pf.QuadPart;
 }
 
 #define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, HINSTANCE instprev, PSTR cmdline, int cmdshow)
@@ -188,7 +187,20 @@ struct XFile
     u8 *bytes;
 };
 
-void xwinupdate()
+inline LARGE_INTEGER xwallclock(void)
+{
+    LARGE_INTEGER counter;
+    QueryPerformanceCounter(&counter);
+    return counter;
+}
+
+inline f32 xseconds(LARGE_INTEGER start, LARGE_INTEGER end)
+{
+    f32 r = ((f32)(end.QuadPart - start.QuadPart) / (f32)xwin.pf);
+    return r;
+}
+
+void xwinupdate(bool topdown, v2f windim)
 {
     // Get mouse position
     POINT mousePoint;
@@ -197,36 +209,36 @@ void xwinupdate()
         if (ScreenToClient(xwin.wh, &mousePoint))
         {
             xwin.mouse.pos.x = (f32)mousePoint.x;
-            xwin.mouse.pos.y = (xwin.td ? mousePoint.y : xwin.wd.y - (f32)mousePoint.y);
+            xwin.mouse.pos.y = (topdown ? mousePoint.y : windim.y - (f32)mousePoint.y);
         }
     }
-
+    
     // Mouse dragging
     if (xwin.mouse.left.down && !xwin.mouse.dragging)
     {
         xwin.mouse.dragging = true;
     }
-
+    
     if (xwin.mouse.dragging && !xwin.mouse.left.down)
     {
         xwin.mouse.dragging = false;
     }
-
+    
     // Clear keyboard pressed state from last frame
     for (u32 i = 0; i < narray(xwin.key.all); ++i)
     {
         xwin.key.all[i].pressed = false;
     }
-
+    
     // Clear mouse pressed state
     xwin.mouse.left.pressed = false;
     xwin.mouse.right.pressed = false;
-
+    
     xwin.mouse.left.released = false;
     xwin.mouse.right.released = false;
-
+    
     xwin.mouse.wheel = 0;
-
+    
     // Clear the input char
     xwin.ic = 0;
     xwin.ice = false;
@@ -235,11 +247,11 @@ void xwinupdate()
 bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
 {
     bool dragged = false;
-
+    
     if (len2f(sub2f(p, xwin.mouse.pos)) < maxdist * maxdist)
     {
         *hover = true;
-
+        
         if (xwin.mouse.dragging)
         {
             xwin.mouse.dragLastP = xwin.mouse.pos;
@@ -250,7 +262,7 @@ bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
     {
         *hover = false;
     }
-
+    
     if (xwin.mouse.dragging && xwin.mouse.draggingAddress == address)
     {
         v2f deltaP = sub2f(xwin.mouse.pos, xwin.mouse.dragLastP);
@@ -258,7 +270,7 @@ bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
         *delta = deltaP;
         dragged = true;
     }
-
+    
     return dragged;
 }
 
@@ -361,7 +373,7 @@ DXGI_RATIONAL xrational(DWORD n, DWORD d)
 BITMAPINFO xbmpinfo(int width, int height)
 {
     BITMAPINFOHEADER h = {
-        sizeof(h), width, -height, 1, 32
+        sizeof(h), width, height, 1, 32
     };
     
     BITMAPINFO r = {

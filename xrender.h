@@ -9,7 +9,6 @@
 #include "xmemory.h"
 #include "xmath.h"
 #include "xarray.h"
-#include "xstack.h"
 #include "xlist.h"
 #include "xtable.h"
 #include "xwindows.h"
@@ -65,7 +64,8 @@ rdinates and other info about the source image. */
 XSprite  xspritepng   (wchar_t *path, bool premulalpha);
 u8      *xpng         (wchar_t *filePath, v2i *dim, bool premulAlpha);
 XSprite  xspritebytes (u8 *bytes, v2i dim);
-Stack_T *xbatch       (s32 size);
+Array_T *xbatch       (s32 size);
+Array_T *xmeshbatch   (s32 sz);
 u8      *xatlasbytes  (void);
 void     xatlasupdate (u8 *data);
 
@@ -82,15 +82,19 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tightBounds, s32 *tightDesc
    DRAWING / RENDERING UTILITIES
    ========================================================================= */
 
-void xline      (v2f a, v2f b, v4f color, f32 sort);
-void xlinerect  (v2f pos, v2f dim, v4f col, f32 sort);
-void xarrow     (Stack_T *group, v2f a, v2f b, v4f col, XSprite head, v2f size, f32 sort);
-void xsprite    (Stack_T *group, XSprite s, v2f pos, v2f dim, v4f col, v2f pivot, f32 rot, f32 sort);
-f32  xglyph     (Stack_T *group, XFont f, u32 unicode, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort);
-f32  xstring    (Stack_T *group, XFont f, wchar_t *string, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort, bool fixedwidth);
+void xline   (v2f a, v2f b, v4f color, f32 sort);
+void xarrow  (Array_T *batch, v2f a, v2f b, v4f col, XSprite head, v2f size, f32 sort);
+void xsprite (Array_T *batch, XSprite s, v2f pos, v2f dim, v4f col, v2f pivot, f32 rot, f32 sort);
+f32  xglyph  (Array_T *batch, XFont f, u32 unicode, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort);
+f32  xstring (Array_T *batch, XFont f, wchar_t *string, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort, bool fixedwidth);
+void xmesh   (Array_T *batch, Array_T vertices, v2f pos, v2f scale, v4f color, v2f pivot, f32 rot, f32 sort);
 
-v2f  xglyphsize (XFont font, u32 unicode);
-v2f  xstringsize(XFont font, wchar_t *s);
+void xlinerect   (v2f pos, v2f dim, v4f col, f32 sort);
+void xlinecircle (v2f pos, f32 radius, s32 n, v4f col, f32 sort);
+void xlinemesh   (Array_T vertices, v2f pos, v2f scale, v4f col, f32 sort);
+
+v2f  xglyphsize  (XFont font, u32 unicode);
+v2f  xstringsize (XFont font, wchar_t *s);
 
 /* =========================================================================
    BASIC TYPES
@@ -137,9 +141,9 @@ struct XFont
 
 typedef struct 
 {
-    v4f color;
-    v2f uv;
     v3f pos;
+    v2f uv;
+    v4f color;
 } XVertex3D;
 
 typedef struct
@@ -154,6 +158,13 @@ typedef struct
 } XVertexCBuffer;
 
 typedef struct
+{
+    v2f a, b;
+    v4f col;
+    f32 sort;
+} XLineCommand;
+
+typedef struct
 { 
     f32 rot, sort;
     v2f pos, size, pivot;
@@ -162,11 +173,12 @@ typedef struct
 } XSpriteCommand;
 
 typedef struct
-{
-    v2f a, b;
+{ 
+    f32 rot, sort;
+    v2f pos, scale, pivot;
     v4f col;
-    f32 sort;
-} XLineCommand;
+    Array_T vertices;
+} XMeshCommand;
 
 typedef struct
 {
@@ -176,14 +188,13 @@ typedef struct
 } XSpriteAtlas;
 
 struct XRender {
-    s32     sgi, sas, mss, msl, gms, abi, flc;
+    s32     sgi, mgi, sas, mss, msl, gms, abi, flc;
     bool    run, td;
     v2f     bbs, wp, wd;
     DWORD   wexs, wcs;
     wchar_t wt[256];
     f32     dt;
     v4f     cc;
-    u64     pf;
     HDC     dc;
     HWND    wh;
     LARGE_INTEGER lc;
@@ -191,7 +202,7 @@ struct XRender {
     XVertexCBuffer vcbd;
     XSpriteAtlas sa;
     
-    Stack_T lg, sgs[32];
+    Array_T lg, sgs[32], mgs[32];
     
     IDXGISwapChain *swc;
     
@@ -227,6 +238,7 @@ struct XRender {
     bbs : back buffer size
     dt  : delta time
     sgi : sprite groups index
+    mgi : mesh groups index
     sas : sprite atlas size
     mss : max simultaneous sprites
     msl : max simultaneous lines
@@ -264,6 +276,7 @@ struct XRender {
     lvb : lines vertex buffer
     lg  : line group
     sgs : sprite groups
+    mgs : mesh groups
     vcb : vertex constant buffer
     vcbd: vertex constant buffer data
     asrv: atlas shader resource view
@@ -391,6 +404,7 @@ void blit_simple_unchecked(u8 *dst, u32 dstsz, u8 *src, v2i at, v2i dim)
         rowDst += 4*xrend.sa.size;
     }
 }
+
 
 XSprite xspritebytes(u8 *b, v2i dim)
 {
@@ -652,14 +666,26 @@ void xfontfree(XFont f)
     Table_free(f.glyphs);
 }
 
-Stack_T *xbatch(s32 sz)
+Array_T *xbatch(s32 sz)
 {
-    Stack_T *r;
+    Array_T *r;
     
     assert(narray(xrend.sgs)>xrend.sgi);
     
     r = xrend.sgs + xrend.sgi++;
-    *r = Stack_new(sz, sizeof(XSpriteCommand));
+    *r = Array_new(sz, sizeof(XSpriteCommand));
+    
+    return r;
+}
+
+Array_T *xmeshbatch(s32 sz)
+{
+    Array_T *r;
+    
+    assert(narray(xrend.mgs)>xrend.sgi);
+    
+    r = xrend.mgs + xrend.mgi++;
+    *r = Array_new(sz, sizeof(XMeshCommand));
     
     return r;
 }
@@ -670,10 +696,10 @@ void xpush_line_command(v2f a, v2f b, v4f color, f32 sort)
     {
         a, b, color, sort,
     };
-    Stack_push(&xrend.lg, &c);
+    Array_push(&xrend.lg, &c);
 }
 
-void xpush_rect_command(Stack_T *group, v2f pos, v2f dim, rect2f uvs, 
+void xpush_rect_command(Array_T *group, v2f pos, v2f dim, rect2f uvs, 
                         v4f color, v2f pivot, f32 rot, f32 sort)
 {
     XSpriteCommand c = 
@@ -682,7 +708,20 @@ void xpush_rect_command(Stack_T *group, v2f pos, v2f dim, rect2f uvs,
         pos, dim, pivot,
         color, uvs
     };
-    Stack_push(group, &c);
+    Array_push(group, &c);
+}
+
+void xpush_mesh_command(Array_T *group, Array_T vertices, v2f pos, v2f scale, 
+                        v4f color, v2f pivot, f32 rot, f32 sort)
+{
+    XMeshCommand c = 
+    {
+        rot, sort,
+        pos, scale, pivot,
+        color,
+        vertices
+    };
+    Array_push(group, &c);
 }
 
 v2f xmonitor()
@@ -716,7 +755,7 @@ void xstroke(v2f a, v2f b, v4f c, f32 w, f32 s)
     xline( a,  b, ini4f(1,1,1,1), 0);
 }
 
-void xarrow2d(Stack_T *g, v2f a, v2f b, v4f c, XSprite head, v2f headsize, f32 s)
+void xarrow2d(Array_T *g, v2f a, v2f b, v4f c, XSprite head, v2f headsize, f32 s)
 {
     v2f dir;
     
@@ -726,20 +765,17 @@ void xarrow2d(Stack_T *g, v2f a, v2f b, v4f c, XSprite head, v2f headsize, f32 s
     xsprite(g, head, b, headsize, c, ini2f(1,.5f), degf(arrowAngle), s);
 }
 
-void xlinerect(v2f p, v2f wh, v4f cl, f32 st)
-{
-    xpush_line_command(p, ini2f(p.x+wh.x, p.y), cl, st); // bottom
-    xpush_line_command(ini2f(p.x,p.y+wh.y), ini2f(p.x+wh.x, p.y+wh.y), cl, st); // top
-    xpush_line_command(p, ini2f(p.x,p.y+wh.y+1), cl, st); // left
-    xpush_line_command(ini2f(p.x+wh.x,p.y), ini2f(p.x+wh.x,p.y+wh.y), cl, st); // right
-}
-
-void xsprite(Stack_T *g, XSprite sp, v2f p, v2f s, v4f cl, v2f pv, f32 r, f32 st)
+void xsprite(Array_T *g, XSprite sp, v2f p, v2f s, v4f cl, v2f pv, f32 r, f32 st)
 {
     xpush_rect_command(g, p, s, sp.uv, cl, pv, r, st);
 }
 
-f32 xglyph(Stack_T *g, XFont f, u32 u, v2f p, v4f c, v2f pv, f32 r, f32 s)
+void xmesh(Array_T *b, Array_T v, v2f p, v2f s, v4f c, v2f pv, f32 r, f32 st)
+{
+    xpush_mesh_command(b, v, p, s, c, pv, r, st);
+}
+
+f32 xglyph(Array_T *g, XFont f, u32 u, v2f p, v4f c, v2f pv, f32 r, f32 s)
 {
     XSprite *sp = (XSprite *)Table_get(f.glyphs, &u);
     if (sp) {
@@ -749,7 +785,7 @@ f32 xglyph(Stack_T *g, XFont f, u32 u, v2f p, v4f c, v2f pv, f32 r, f32 s)
     return 0;
 }
 
-f32 xstring(Stack_T *g, XFont f, wchar_t *s, v2f p, v4f c, v2f pv, f32 r, f32 st, bool fw)
+f32 xstring(Array_T *g, XFont f, wchar_t *s, v2f p, v4f c, v2f pv, f32 r, f32 st, bool fw)
 {
     f32 startX, w;
     XSprite *sp;
@@ -784,6 +820,40 @@ f32 xstring(Stack_T *g, XFont f, wchar_t *s, v2f p, v4f c, v2f pv, f32 r, f32 st
         at++;
     }
     return p.x-startX;
+}
+
+void xlinerect(v2f p, v2f wh, v4f cl, f32 st)
+{
+    xpush_line_command(p, ini2f(p.x + wh.x, p.y), cl, st); // bottom
+    xpush_line_command(ini2f(p.x, p.y + wh.y), ini2f(p.x + wh.x, p.y + wh.y), cl, st); // top
+    xpush_line_command(p, ini2f(p.x, p.y + wh.y + 1), cl, st); // left
+    xpush_line_command(ini2f(p.x + wh.x, p.y), ini2f(p.x + wh.x, p.y + wh.y), cl, st); // right
+}
+
+void xlinecircle(v2f pos, f32 radius, s32 n, v4f col, f32 sort)
+{
+    for (s32 i = 0; i < n; ++i) {
+        f32 angle1 = radf(i * 360.0f / n);
+        f32 angle2 = radf((i + 1) * 360.0f / n);
+        
+        v2f p1 = ini2f(pos.x + sinf(angle1) * radius, pos.y + cosf(angle1) * radius);
+        v2f p2 = ini2f(pos.x + sinf(angle2) * radius, pos.y + cosf(angle2) * radius);
+        xpush_line_command(p1, p2, col, sort);
+    }
+}
+
+void xlinemesh(Array_T vertices, v2f pos, v2f scale, v4f col, f32 sort)
+{
+    for (s32 i = 0; i < vertices.top-1; ++i)
+    {
+        XVertex3D *v3d1 = Array_get(vertices, i);
+        XVertex3D* v3d2 = Array_get(vertices, i + 1);
+        
+        v2f p1 = add2f(pos, ini2f(scale.x*v3d1->pos.x, scale.y*v3d1->pos.y));
+        v2f p2 = add2f(pos, ini2f(scale.x*v3d2->pos.x, scale.y*v3d2->pos.y));
+        
+        xpush_line_command(p1, p2, col, sort);
+    }
 }
 
 v2f xglyphsize(XFont f, u32 u)
@@ -1096,12 +1166,15 @@ void create_lines_vertex_buffer()
     }
 }
 
-void free_sprite_groups()
+void free_sprite_and_mesh_groups()
 {
     s32 i;
     
     for (i=0; i<xrend.sgi; ++i)
-        Stack_free(xrend.sgs + i);
+        Array_free(xrend.sgs + i);
+    
+    for (i=0; i<xrend.mgi; ++i)
+        Array_free(xrend.mgs + i);
 }
 
 void reset_sprite_groups()
@@ -1112,97 +1185,136 @@ void reset_sprite_groups()
         xrend.sgs[i].top = 0;
 }
 
-u32 produce_vertices_from_sprite_groups()
+void reset_mesh_groups()
+{
+    s32 i;
+    
+    for (i = 0; i < xrend.mgi; ++i)
+        xrend.mgs[i].top = 0;
+}
+
+u32 produce_vertices_from_sprite_and_mesh_groups()
 {
     f32 rotRad, pvx, pvy;
-    v2f p,pa,pb,pc,pd,xaxis,yaxis;
-    s32 i, j, vi, vc;
+    v2f p, pa, pb, pc, pd, xaxis, yaxis;
+    s32 i, j, vi, spritesVertexCount, meshsVertexCount;
     XVertex3D *v;
-    Stack_T* sg;
-    XSpriteCommand* cmd;
+    Array_T *batch;
+    XSpriteCommand *scmd;
+    XMeshCommand *mcmd;
     D3D11_MAPPED_SUBRESOURCE mr;
     
-    for (i=0, vc=0; i<xrend.sgi; ++i)
-        vc+=6*(xrend.sgs[i].top);
+    /*  Count number of vertices from all sprite groups                    */
     
-    if (vc>0) {
-        v = xnalloc(vc, XVertex3D);
-        vi = 0;
+    for (i=0, spritesVertexCount=0; i<xrend.sgi; ++i)
+        spritesVertexCount += 6*(xrend.sgs[i].top);
+    
+    /*  Count number of vertices from all mesh groups                      */
+    
+    for (i=0, meshsVertexCount=0; i<xrend.mgi; ++i)
+        for (j=0; j<xrend.mgs[i].top; ++j)
+        meshsVertexCount += ((XMeshCommand*)Array_get(xrend.mgs[i], j))->vertices.top;
+    
+    v = 0;
+    vi = 0;
+    if (spritesVertexCount+meshsVertexCount) {
+        v = xnalloc(spritesVertexCount+meshsVertexCount, XVertex3D);
+    }
+    
+    /*  Loop through all sprite groups and produces the vertices.          */
+    if (spritesVertexCount>0) {
         for (i=0; i<xrend.sgi; ++i)
         {
-            sg = xrend.sgs + i;
-            if (sg->top>0)
+            batch = xrend.sgs + i;
+            if (batch->top > 0)
             {
-                for (j=0; j<sg->top; ++j)
+                for (j=0; j < batch->top; ++j)
                 {
-                    cmd = Stack_get(*sg, j);
+                    scmd = Array_get(*batch, j);
                     
-                    rotRad = -radf(cmd->rot);
+                    rotRad = -radf(scmd->rot);
                     
-                    pvx=cmd->pivot.x;
-                    pvy=cmd->pivot.y;
+                    pvx = scmd->pivot.x;
+                    pvy = scmd->pivot.y;
                     
-                    xaxis=mul2f(cmd->size.x, ini2f(cosf(rotRad),-sinf(rotRad)));
-                    yaxis=mul2f(cmd->size.y, ini2f(sinf(rotRad),cosf(rotRad)));
+                    xaxis = mul2f(scmd->size.x, ini2f(cosf(rotRad), -sinf(rotRad)));
+                    yaxis = mul2f(scmd->size.y, ini2f(sinf(rotRad), cosf(rotRad)));
                     
-                    p=cmd->pos;
-                    pa=sub2f(sub2f(p, mul2f(  pvx, xaxis)), mul2f(  pvy, yaxis));
-                    pb=sub2f(sub2f(p, mul2f(pvx-1, xaxis)), mul2f(  pvy, yaxis));
-                    pc=sub2f(sub2f(p, mul2f(pvx-1, xaxis)), mul2f(pvy-1, yaxis));
-                    pd=sub2f(sub2f(p, mul2f(  pvx, xaxis)), mul2f(pvy-1, yaxis));
+                    p = scmd->pos;
+                    pa = sub2f(sub2f(p, mul2f(  pvx, xaxis)), mul2f(  pvy, yaxis));
+                    pb = sub2f(sub2f(p, mul2f(pvx-1, xaxis)), mul2f(  pvy, yaxis));
+                    pc = sub2f(sub2f(p, mul2f(pvx-1, xaxis)), mul2f(pvy-1, yaxis));
+                    pd = sub2f(sub2f(p, mul2f(  pvx, xaxis)), mul2f(pvy-1, yaxis));
                     
-                    XVertex3D a =
-                    {
-                        pa.x, pa.y, cmd->sort,
-                        cmd->uv.min.x, cmd->uv.min.y,
-                        cmd->col.r, cmd->col.g, cmd->col.b, cmd->col.a
-                    };
+                    v4f c = scmd->col;
+                    f32 umin = scmd->uv.min.x;
+                    f32 umax = scmd->uv.max.x;
+                    f32 vmin = scmd->uv.min.y;
+                    f32 vmax = scmd->uv.max.y;
+                    f32 sort = scmd->sort;
                     
-                    XVertex3D b =
-                    {
-                        pb.x, pb.y, cmd->sort,
-                        cmd->uv.max.x, cmd->uv.min.y,
-                        cmd->col.r, cmd->col.g, cmd->col.b, cmd->col.a
-                    };
+                    XVertex3D va = { pa.x, pa.y, sort, umin, (xrend.td ? vmax : vmin), c.r,c.g,c.b,c.a };
+                    XVertex3D vb = { pb.x, pb.y, sort, umax, (xrend.td ? vmax : vmin), c.r,c.g,c.b,c.a };
+                    XVertex3D vc = { pc.x, pc.y, sort, umax, (xrend.td ? vmin : vmax), c.r,c.g,c.b,c.a };
+                    XVertex3D vd = { pd.x, pd.y, sort, umin, (xrend.td ? vmin : vmax), c.r,c.g,c.b,c.a };
                     
-                    XVertex3D c =
-                    {
-                        pc.x, pc.y, cmd->sort,
-                        cmd->uv.max.x, cmd->uv.max.y,
-                        cmd->col.r, cmd->col.g, cmd->col.b, cmd->col.a
-                    };
-                    
-                    XVertex3D d =
-                    {
-                        pd.x, pd.y, cmd->sort,
-                        cmd->uv.min.x, cmd->uv.max.y,
-                        cmd->col.r, cmd->col.g, cmd->col.b, cmd->col.a
-                    };
-                    
-                    v[vi++] = a;
-                    v[vi++] = (xrend.td ? b : c);
-                    v[vi++] = (xrend.td ? c : b);
-                    v[vi++] = a;
-                    v[vi++] = (xrend.td ? c : d);
-                    v[vi++] = (xrend.td ? d : c);
+                    v[vi++] = va;
+                    v[vi++] = (xrend.td ? vb : vc);
+                    v[vi++] = (xrend.td ? vc : vb);
+                    v[vi++] = va;
+                    v[vi++] = (xrend.td ? vc : vd);
+                    v[vi++] = (xrend.td ? vd : vc);
                 }
             }
         }
-        
-        ID3D11DeviceContext_Map(xrend.ctx, (ID3D11Resource *)xrend.svb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
-        memcpy(mr.pData, v, vc*sizeof(XVertex3D)); 
-        ID3D11DeviceContext_Unmap(xrend.ctx, (ID3D11Resource *)xrend.svb, 0);
-        xfree(v);
     }
     
-    reset_sprite_groups();
+    /*  Loop through all mesh groups and produces the vertices.          */
     
-    return vc;
+    if (meshsVertexCount>0) {
+        for (i=0; i<xrend.mgi; ++i)
+        {
+            batch = xrend.mgs + i;
+            if (batch->top > 0)
+            {
+                for (j=0; j < batch->top; ++j)
+                {
+                    mcmd = Array_get(*batch, j);
+                    
+                    p = mcmd->pos;
+                    
+                    for (s32 k = 0; k < mcmd->vertices.top; ++k)
+                    {
+                        XVertex3D *v3d = (XVertex3D *)Array_get(mcmd->vertices, k);
+                        
+                        XVertex3D temp = 
+                        {
+                            mcmd->pos.x + v3d->pos.x*mcmd->scale.x, mcmd->pos.y + v3d->pos.y*mcmd->scale.y, v3d->pos.z,
+                            v3d->uv.x, v3d->uv.y,
+                            v3d->color.r*mcmd->col.r, v3d->color.g*mcmd->col.g, v3d->color.b*mcmd->col.b, v3d->color.a*mcmd->col.a,
+                        };
+                        
+                        v[vi++] = temp;
+                    }
+                }
+            }
+        }
+    }
+    
+    ID3D11DeviceContext_Map(xrend.ctx, (ID3D11Resource *)xrend.svb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
+    memcpy(mr.pData, v, vi*sizeof(XVertex3D)); 
+    ID3D11DeviceContext_Unmap(xrend.ctx, (ID3D11Resource *)xrend.svb, 0);
+    xfree(v);
+    
+    reset_sprite_groups();
+    reset_mesh_groups();
+    
+    return vi;
 }
 
 void free_line_group()
 {
-    Stack_free(&xrend.lg);
+    Array_free(&xrend.lg);
 }
 
 void reset_line_group()
@@ -1225,7 +1337,7 @@ u32 produce_vertices_from_line_group()
         vi = 0;
         
         for (i = 0; i < xrend.lg.top; ++i) {
-            cmd = Stack_get(xrend.lg, i);
+            cmd = Array_get(xrend.lg, i);
             
             XLineVertex3D a =
             {
@@ -1490,18 +1602,17 @@ void xrendinit(XRendConfig config)
     WNDCLASSEXW wc = xwndclass(config.wndproc);
     if (RegisterClassExW(&wc) == 0) exit(1);
     
-    xrend.wexs = config.winClassStyleEx;
-    xrend.wcs = config.winClassStyle;
-    xrend.wp = config.winPos;
-    xrend.wd = config.winDim;
-    xstrcpy(xrend.wt, 256, config.winTitle);
-    xrend.td = config.topDown;
-    xrend.sas = config.spriteAtlasSize;
-    xrend.mss = config.maxSimulSprites;
-    xrend.msl = config.maxSimulLines;
-    xrend.gms = config.glyphMakerSize;
-    xrend.cc = config.clearColor;
-    
+    xrend.wexs = (config.winClassStyleEx == 0) ? xrend.wexs = 0 : config.winClassStyleEx;
+    xrend.wcs  = (config.winClassStyle == 0) ? xrend.wcs = WS_OVERLAPPEDWINDOW | WS_VISIBLE : config.winClassStyle;
+    xrend.wp   = (config.winPos.x==0 && config.winPos.y==0) ? xrend.wp = ini2f(0,0) : config.winPos;
+    xrend.wd   = (config.winDim.x==0 && config.winDim.y==0) ? xrend.wd = ini2f(800,600) : config.winDim;
+    xstrcpy(xrend.wt, 256, (config.winTitle == 0) ? L"XLib's XRender" : config.winTitle);
+    xrend.td   = config.topDown;
+    xrend.sas  = (config.spriteAtlasSize == 0) ? xrend.sas = 4096  : config.spriteAtlasSize;
+    xrend.mss  = (config.maxSimulSprites == 0) ? xrend.mss = 10000 : config.maxSimulSprites;
+    xrend.msl  = (config.maxSimulLines   == 0) ? xrend.msl = 4096  : config.maxSimulLines;
+    xrend.gms  = (config.glyphMakerSize  == 0) ? xrend.gms = 256   : config.glyphMakerSize;
+    xrend.cc   = (config.clearColor.a == 0) ? xrend.cc = ini4f(.08f,.05f,.02f,1) : config.clearColor;
     xrend.bbs = xrend.wd;
     
     RECT size = { (u32)xrend.wp.x, (u32)xrend.wp.y,
@@ -1510,8 +1621,8 @@ void xrendinit(XRendConfig config)
     xrend.wd = ini2f((f32)(size.right - size.left), (f32)(size.bottom - size.top));
     
     xrend.wh = CreateWindowExW(xrend.wexs, L"xwindow_class", xrend.wt, xrend.wcs,
-                             (s32)xrend.wp.x, (s32)xrend.wp.y, (s32)xrend.wd.x, (s32)xrend.wd.y,
-                             NULL, NULL, GetModuleHandle(0), NULL);
+                               (s32)xrend.wp.x, (s32)xrend.wp.y, (s32)xrend.wd.x, (s32)xrend.wd.y,
+                               NULL, NULL, GetModuleHandle(0), NULL);
     if (xrend.wh == NULL)
         exit(1);
     
@@ -1561,10 +1672,6 @@ void xrendinit(XRendConfig config)
     u32 ams = xrend.sa.size * xrend.sa.size * 4;
     xrend.sa.bytes = (u8*)xalloc(ams);
     
-    LARGE_INTEGER pf;
-    QueryPerformanceFrequency(&pf);
-    xrend.pf = pf.QuadPart;
-    
     dsound8_init();
     
     D3D11_SUBRESOURCE_DATA ad = { xrend.sa.bytes, (UINT)(xrend.sa.size * 4), 0 };
@@ -1610,7 +1717,7 @@ void xrendinit(XRendConfig config)
     if (FAILED(ID3D11Device_CreateBuffer(xrend.dvc, &vcbd, 0, &xrend.vcb)))
         exit(1);
     
-    xrend.lg = Stack_new(256, sizeof(XLineCommand));
+    xrend.lg = Array_new(256, sizeof(XLineCommand));
     
     LARGE_INTEGER lastCounter;
     QueryPerformanceCounter(&lastCounter);
@@ -1621,18 +1728,19 @@ void xrendinit(XRendConfig config)
 void xrendupdate(void)
 {
     // Measure fps
-    LARGE_INTEGER counter;
-    QueryPerformanceCounter(&counter);
+    LARGE_INTEGER counter = xwallclock();
     
     // Calculate dt
-    xrend.dt = ((f32)(counter.QuadPart - xrend.lc.QuadPart) / (f32)xrend.pf);
+    xrend.dt = xseconds(xrend.lc, counter);
+    if (xrend.dt > 1000)
+        xrend.dt = 0;
     
     // Save counter
     xrend.lc = counter;
     
     swap_chain_resize();
     
-    u32 svc = produce_vertices_from_sprite_groups();
+    u32 svc = produce_vertices_from_sprite_and_mesh_groups();
     u32 lvc = produce_vertices_from_line_group();
     
     f32 scaleX = 2.0f / xrend.bbs.x;
@@ -1665,7 +1773,7 @@ void xrendfini(void)
 {
     xfree(xrend.sa.bytes);
     
-    free_sprite_groups();
+    free_sprite_and_mesh_groups();
     free_line_group();
     
     xmemcheck();
