@@ -172,7 +172,7 @@ SetCursor(xwin.ch);  \
 } break;                \
 case WM_DESTROY:        \
 case WM_CLOSE: {        \
-xrnd.running = false;    \
+xd11.running = false;    \
 } break;                \
 case WM_CHAR: {                 \
 xwin.ic = (wchar_t)wParam;   \
@@ -559,5 +559,38 @@ bool File_write(wchar_t *path, wchar_t *data, u32 size)
     return r;
 }
 
+/*  Copies the exe path until last slash
+    c:/my/path/to/the/app/main.exe
+                         ^                            */
+void xpathabs(wchar_t *dst, u32 dstsize, wchar_t *filename)
+{
+    wchar_t *slashpos, *at, exepath[MAX_PATH], dir[260];
+    
+    xpath(exepath, MAX_PATH);
+    
+    slashpos = 0;
+    at = exepath;
+    while (*at++)
+        if (*at == '\\' || *at == '/')
+        slashpos = at;
+    
+    xstrcps(dir, 260, exepath, (u32)(slashpos - exepath));
+    _snwprintf_s(dst, dstsize, _TRUNCATE, L"%s\\%s", dir, filename);
+}
+
+void xpathabsascii(char *dst, u32 dstsize, char *filename)
+{
+    char *slashpos, *at, exepath[MAX_PATH], dir[260];
+    xpathascii(exepath, MAX_PATH);
+    
+    slashpos  = 0;
+    at = exepath;
+    while (*at++)
+        if (*at == '\\' || *at == '/')
+        slashpos = at;
+    
+    xstrcpsascii(dir, 260, exepath, (u32)(slashpos - exepath));
+    _snprintf_s(dst, dstsize, _TRUNCATE, "%s\\%s", dir, filename);
+}
 
 #endif
