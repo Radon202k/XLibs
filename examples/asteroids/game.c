@@ -1,26 +1,30 @@
 void game_init(void)
 {
-    gs.ship.pos = mul2f(.5f, xrend.bbs);
+    gs.ship.pos = mul2f(.5f, xrnd.backBufferSize);
     gs.ship.dim = ini2f(50,50);
     gs.ship.forw = ini2f(1,0);
     
     gs.bullets = Array_new(16, sizeof(Bullet));
     gs.asteroids = Array_new(16, sizeof(Asteroid));
     
-    for (s32 i=0; i<1; ++i)
-        asteroid_new(rnd2f(ini2f(0,0), xrend.bbs), 
-                     rnd2f(ini2f(-50,-50), ini2f(50,50)), 
-                     rnd2f(ini2f(50,50), ini2f(100,100)), 
+    for (s32 i=0; i<4; ++i)
+        asteroid_new(rnd2f(ini2f(0,0), xrnd.backBufferSize), 
+                     rnd2f(ini2f(-100,-100), ini2f(100,100)),  // vel 
+                     rnd2f(ini2f(50,50), ini2f(100,100)),  // size
                      rndi(5,7));
     
-    xsoundinit(xrend.wh);
+    xsoundinit(xrnd.windowHandle);
 }
 
 void game_update_and_render(void)
 {
+    // Generate spatial partition grid to accelerate collision detection
+    v2i cellSize = ini2i(180, 180);
+    PhysicsGrid grid = physics_grid_generate(cellSize);
+    
     f32 acc = physics_update_ship();
-    physics_update_bullets();
-    physics_update_asteroids();
+    physics_update_bullets(grid);
+    physics_update_asteroids(grid);
     
     // Draw fire behind ship
     if (acc>0)
@@ -66,6 +70,10 @@ void game_update_and_render(void)
             ini2f((f32)xsound.wc / xsound.bufSize * soundBufwidth,0), 
             ini2f(6, 50.0f), eme4f, ini2f(0,0), 0, 0);
 #endif
+    
+    // Draw and free physics spatial partition grid
+    physics_grid_draw(cellSize, grid.ncell);
+    physics_grid_free(grid);
     
     // End of frame
 }

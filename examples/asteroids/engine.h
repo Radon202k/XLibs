@@ -12,6 +12,8 @@ typedef struct
     XFont font;
     XSprite white, arrow, circle;
     
+    XSprite noiseTest;
+    
     Array_T *layer1, *layer2, *meshlayer1;
     
 } Engine;

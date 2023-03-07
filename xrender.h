@@ -14,39 +14,179 @@
 #include "xwindows.h"
 
 /* =========================================================================
-   DATA TYPES
+   DATA TYPES INTERNAL TO THE RENDERER THAT THE USER DOESN'T CARE
    ========================================================================= */
 
-typedef struct XRender  XRender;
-typedef struct XSprite  XSprite;
-typedef struct XFont    XFont;
+typedef struct XVertex3D      XVertex3D;
+typedef struct XLineVertex3D  XLineVertex3D;
+typedef struct XVertexCBuffer XVertexCBuffer;
+typedef struct XLineCommand   XLineCommand;
+typedef struct XSpriteCommand XSpriteCommand;
+typedef struct XMeshCommand   XMeshCommand;
+typedef struct XTextureAtlas  XTextureAtlas;
 
-typedef struct
+struct XVertex3D
 {
-    WNDPROC wndproc;
-    u32 winClassStyle;
-    u32 winClassStyleEx;
-    wchar_t* winTitle;
+    v3f pos;
+    v2f uv;
+    v4f color;
+};
+
+struct XLineVertex3D
+{
+    v4f color;
+    v3f pos;
+};
+
+struct XVertexCBuffer
+{
+    mat4f WVP;
+};
+
+struct XLineCommand
+{
+    v2f a, b;
+    v4f col;
+    f32 sort;
+};
+
+struct XSpriteCommand
+{ 
+    f32 rot, sort;
+    v2f pos, size, pivot;
+    v4f col;
+    rect2f uv;
+};
+
+struct XMeshCommand
+{ 
+    f32 rot, sort;
+    v2f pos, scale, pivot;
+    v4f col;
+    Array_T vertices;
+};
+
+struct XTextureAtlas
+{
+    s32 size, bottom;
+    v2i at;
+    u8 *bytes;
+};
+
+/* =========================================================================
+   DATA TYPES THAT THE USER CARES ABOUT
+   ========================================================================= */
+
+typedef struct XRenderConfig XRenderConfig;
+typedef struct XRender XRender;
+typedef struct XSprite XSprite;
+typedef struct XFont   XFont;
+
+struct XRenderConfig
+{
+    WNDPROC  wndproc;
+    u32 windowClassStyle;
+    u32 windowClassStyleEx;
+    wchar_t* windowTitle;
+    v2f windowPos;
+    v2f windowSize;
     v4f clearColor;
-    v2f winPos;
-    v2f winDim;
     bool topDown;
-    s32 spriteAtlasSize;
+    s32 textureAtlasSize;
     s32 maxSimulSprites;
     s32 maxSimulLines;
     s32 glyphMakerSize;
-} XRendConfig;
+};
+
+struct XRender
+{
+    /* Configuration values */
+    s32 maxSimulSprites;
+    s32 maxSimulLines;
+    s32 glyphMakerSize;
+    D3D_FEATURE_LEVEL featureLevelArray[8];
+    s32 featureLevelIndex;
+    bool topDown;
+    DWORD windowClassStyleEx;
+    DWORD windowClassStyle;
+    v2f backBufferSize;
+    v2f windowPos;
+    v2f windowSize;
+    wchar_t windowTitle[256];
+    v4f clearColor;
+    
+    /* State values */
+    bool running;
+    f32 dt;
+    
+    /* High level renderer values */
+    XVertexCBuffer vertexCBufferData;
+    XTextureAtlas textureAtlas;
+    Array_T lineBatch;
+    Array_T spriteBatchArray[32];
+    s32 spriteBatchIndex;
+    Array_T meshBatchArray[32];
+    s32 meshBatchIndex;
+    
+    /* Low level renderer values */
+    HDC deviceContext;
+    HWND windowHandle;
+    LARGE_INTEGER lastCounter;
+    IDXGISwapChain *d11SwapChain;
+    ID3D11Device *d11Device;
+    ID3D11DeviceContext *d11DeviceContext;
+    ID3D11Debug *d11Debug;
+    ID3D11Texture2D *backBufferTexture2D;
+    ID3D11Texture2D *depthStencilBufferTexture2D;
+    ID3D11Texture2D *textureAtlasTexture2D;
+    ID3D11RenderTargetView *renderTargetView;
+    ID3D11DepthStencilView *depthStencilView;
+    ID3D11DepthStencilState *depthStencilState;
+    ID3D11BlendState *blendState; 
+    ID3D11RasterizerState *rasterizerState;
+    ID3D11SamplerState *samplerState;
+    ID3D11VertexShader *texturedVertexShader;
+    ID3D11VertexShader *lineVertexShader;
+    ID3D11PixelShader *texturedPixelShader;
+    ID3D11PixelShader *linePixelShader;
+    ID3D11InputLayout *texturedInputLayout;
+    ID3D11InputLayout *lineInputLayout;
+    ID3D11Buffer *texturedVertexBuffer;
+    ID3D11Buffer *lineVertexBuffer;
+    ID3D11Buffer *vertexCBuffer;
+    ID3D11ShaderResourceView *textureAtlasSRV; 
+    D3D11_DEPTH_STENCIL_VIEW_DESC depthStencilViewDesc;
+    D3D11_TEXTURE2D_DESC depthStencilBufferTexDesc; 
+};
+
+struct XSprite
+{
+    v2f size;
+    rect2f uv;
+    v2f align;
+};
+
+struct XFont
+{
+    f32 lineadvance, charwidth, maxdescent;
+    wchar_t path[MAX_PATH];
+    HFONT handle;
+    HBITMAP bitmap;
+    TEXTMETRICW metrics;
+    VOID *bytes;
+    Table_T glyphs;
+};
 
 /* =========================================================================
    MAIN FUNCTIONS
    ========================================================================= */
 
-void xrendinit    (XRendConfig config);
-void xrendfini    (void);
-void xrendupdate  (void);
-void xrendresized (void);
+void xrender_initialize   (XRenderConfig config);
+void xrender_shutdown     (void);
+void xrender_update       (void);
+void xrender_resized      (void);
 
-v2f  xdisplaysize (void);
+v2f  xrender_monitor_size (void);
 
 /* =========================================================================
    TEXTURE / TEXTURE ATLAS / SPRITES
@@ -73,10 +213,10 @@ void     xatlasupdate (u8 *data);
    FONTS / GLYPHS
    ========================================================================= */
 
-XFont   xfont       (wchar_t *fileName, wchar_t *fontName, int heightPoints);
-void    xfontfree   (XFont font);
-s32     xfontheight (s32 pointHeight);
-XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tightBounds, s32 *tightDescent);
+XFont   xfont        (wchar_t *fileName, wchar_t *fontName, int heightPoints);
+void    xfontfree    (XFont font);
+s32     xfontheight  (s32 pointHeight);
+XSprite xglyphsprite (XFont font, wchar_t *c, rect2f *tightBounds, s32 *tightDescent);
 
 /* =========================================================================
    DRAWING / RENDERING UTILITIES
@@ -104,7 +244,10 @@ bool xdraggedhandle(v2f p, f32 maxDist, void *address, bool *hover, v2f *delta);
 void xpathabs      (wchar_t *dest, u32 destSize, wchar_t *fileName);
 void xpathabsascii (char *dest, u32 destSize, char *fileName);
 
-/* End of Interface */
+/* =========================================================================
+   End of Interface
+   ========================================================================= */
+
 
 
 
@@ -119,181 +262,11 @@ void xpathabsascii (char *dest, u32 destSize, char *fileName);
 
 
 
-/* Implementation */
-
-struct XSprite
-{
-    v2f size;
-    rect2f uv;
-    v2f align;
-};
-
-struct XFont
-{
-    f32 lineadvance, charwidth, maxdescent;
-    wchar_t path[MAX_PATH];
-    HFONT handle;
-    HBITMAP bitmap;
-    TEXTMETRICW metrics;
-    VOID *bytes;
-    Table_T glyphs;
-};
-
-typedef struct 
-{
-    v3f pos;
-    v2f uv;
-    v4f color;
-} XVertex3D;
-
-typedef struct
-{
-    v4f color;
-    v3f pos;
-} XLineVertex3D;
-
-typedef struct
-{
-    mat4f WVP;
-} XVertexCBuffer;
-
-typedef struct
-{
-    v2f a, b;
-    v4f col;
-    f32 sort;
-} XLineCommand;
-
-typedef struct
-{ 
-    f32 rot, sort;
-    v2f pos, size, pivot;
-    v4f col;
-    rect2f uv;
-} XSpriteCommand;
-
-typedef struct
-{ 
-    f32 rot, sort;
-    v2f pos, scale, pivot;
-    v4f col;
-    Array_T vertices;
-} XMeshCommand;
-
-typedef struct
-{
-    s32 size, bottom;
-    v2i at;
-    u8 *bytes;
-} XSpriteAtlas;
-
-struct XRender {
-    s32     sgi, mgi, sas, mss, msl, gms, abi, flc;
-    bool    run, td;
-    v2f     bbs, wp, wd;
-    DWORD   wexs, wcs;
-    wchar_t wt[256];
-    f32     dt;
-    v4f     cc;
-    HDC     dc;
-    HWND    wh;
-    LARGE_INTEGER lc;
-    
-    XVertexCBuffer vcbd;
-    XSpriteAtlas sa;
-    
-    Array_T lg, sgs[32], mgs[32];
-    
-    IDXGISwapChain *swc;
-    
-    ID3D11Device *dvc;
-    ID3D11DeviceContext *ctx;
-    ID3D11Debug *dbg;
-    ID3D11Texture2D *bbt, *dsbt, *sat;
-    ID3D11RenderTargetView *rtv;
-    ID3D11DepthStencilView *dsv;
-    ID3D11DepthStencilState *dss;
-    ID3D11BlendState *bls; 
-    ID3D11RasterizerState *rs;
-    ID3D11SamplerState *ss;
-    ID3D11VertexShader *svs, *lvs;
-    ID3D11PixelShader *sps, *lps;
-    ID3D11InputLayout *sil, *lil;
-    ID3D11Buffer *svb, *lvb, *vcb;
-    ID3D11ShaderResourceView *asrv; 
-    
-    D3D11_DEPTH_STENCIL_VIEW_DESC dsvd;
-    D3D11_TEXTURE2D_DESC dsbd; 
-    D3D_FEATURE_LEVEL fl[8];
-    
-    WAVEFORMATEX wf;
-    IDirectSound8 *dsound;
-    IDirectSoundBuffer *abs[32];
-};
-
-/*  
-    wt  : window title
-    run : running
-    td  : top down
-    bbs : back buffer size
-    dt  : delta time
-    sgi : sprite groups index
-    mgi : mesh groups index
-    sas : sprite atlas size
-    mss : max simultaneous sprites
-    msl : max simultaneous lines
-    gms : glyph maker size
-    abi : audio buffer index
-    wp  : window position
-    wd  : window dimension
-    dc  : device context
-    ca  : cursor arrow
-    wexs: window class ex style
-    wcs : window class style
-    wh  : window handle
-    dvc : device
-    ctx : context
-    swc : swap chain
-    dbg : debugger
-    bbt : back buffer texture
-    dsbt: depth stencil buf tex
-    sat : sprite atlas tex
-    rtv : render target view
-    dsv : depth stencil view
-    dss : depth stencil state
-    dsvd: depth stencil view desc
-    dsbd: depth stencil buffer description
-    bls : blend state
-    rs  : rasterizer state
-    ss  : sampler state
-    svs : sprites vertex shader
-    lvs : lines vertex shader
-    sps : sprites pixel shader
-    lps : lines pixel shader
-    sil : sprites input layout
-    lil : lines input layout
-    svb : sprites vertex buffer
-    lvb : lines vertex buffer
-    lg  : line group
-    sgs : sprite groups
-    mgs : mesh groups
-    vcb : vertex constant buffer
-    vcbd: vertex constant buffer data
-    asrv: atlas shader resource view
-    sa  : sprite atlas
-    wf  : wave format
-    abs : audio buffers
-    pf  : perf frequency
-    cc  : clear color
-    fl  : feature levels
-    flc : feature level count
-*/
-
 /* =========================================================================
-   GLOBALS
+   Implementation
    ========================================================================= */
 
-XRender xrend;
+XRender xrnd;
 
 #define RGBA(r,g,b,a) (((a)<<24) | ((r)<<16) | ((g)<<8) | (b))
 
@@ -401,7 +374,7 @@ void blit_simple_unchecked(u8 *dst, u32 dstsz, u8 *src, v2i at, v2i dim)
             *pxDst++ = *pxSrc++;
         
         rowSrc += 4*dim.x;
-        rowDst += 4*xrend.sa.size;
+        rowDst += 4*xrnd.textureAtlas.size;
     }
 }
 
@@ -411,10 +384,10 @@ XSprite xspritebytes(u8 *b, v2i dim)
     s32 m;
     u8 *dst, *src;
     XSprite r;
-    XSpriteAtlas *a;
+    XTextureAtlas *a;
     
     m = 1;
-    a = &xrend.sa;
+    a = &xrnd.textureAtlas;
     
     if ((a->at.x + dim.x + m) > a->size)
         a->at = ini2i(0, a->bottom);
@@ -424,19 +397,15 @@ XSprite xspritebytes(u8 *b, v2i dim)
     
     assert(a->bottom <= a->size);
     
-    dst = xrend.sa.bytes;
+    dst = xrnd.textureAtlas.bytes;
     src = b;
-    blit_simple_unchecked(dst, xrend.sa.size, src, a->at, dim);
+    blit_simple_unchecked(dst, xrnd.textureAtlas.size, src, a->at, dim);
     
-    r.uv.min = ini2f(
-                     a->at.x / (f32)a->size,
-                     (xrend.td ? (a->at.y + dim.y) : a->at.y) / (f32)a->size
-                     );
+    r.uv.min = (v2f){a->at.x / (f32)a->size,
+        (xrnd.topDown ? (a->at.y + dim.y) : a->at.y) / (f32)a->size};
     
-    r.uv.max = ini2f(
-                     (a->at.x + dim.x) / (f32)a->size, 
-                     (xrend.td ? a->at.y : (a->at.y + dim.y)) / (f32)a->size
-                     );
+    r.uv.max = ini2f((a->at.x + dim.x) / (f32)a->size, 
+                     (xrnd.topDown ? a->at.y : (a->at.y + dim.y)) / (f32)a->size);
     
     r.size = ini2fs(dim.x,dim.y);
     
@@ -463,15 +432,21 @@ XSprite xspritepng(wchar_t *path, bool premulalpha)
 
 u8 *xatlasbytes()
 {
-    return xrend.sa.bytes;
+    return xrnd.textureAtlas.bytes;
 }
 
 void xatlasupdate(u8 *updateddata)
 {
-    D3D11_MAPPED_SUBRESOURCE mr;
-    ID3D11DeviceContext_Map(xrend.ctx, (ID3D11Resource *)xrend.sat, 0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
-    memcpy(mr.pData, updateddata, xrend.sa.size*xrend.sa.size*4);
-    ID3D11DeviceContext_Unmap(xrend.ctx, (ID3D11Resource *)xrend.sat, 0);
+    D3D11_MAPPED_SUBRESOURCE mappedSubResource;
+    ID3D11DeviceContext_Map(xrnd.d11DeviceContext, 
+                            (ID3D11Resource *)xrnd.textureAtlasTexture2D, 
+                            0, D3D11_MAP_WRITE_DISCARD, 0, &mappedSubResource);
+    
+    memcpy(mappedSubResource.pData, updateddata, 
+           xrnd.textureAtlas.size*xrnd.textureAtlas.size*4);
+    
+    ID3D11DeviceContext_Unmap(xrnd.d11DeviceContext, 
+                              (ID3D11Resource *)xrnd.textureAtlasTexture2D, 0);
 }
 
 bool cmp_glyph_unicodes(const void *a, const void *b)
@@ -494,71 +469,92 @@ u32 hash_unicode(const void *k)
 
 XFont xfont(wchar_t *path, wchar_t *name, int heightpoints)
 {
-    XFont r;
-    s32 tDescent, tW, tH, temp, maxGlyphW, maxGlyphH, maxDescent, i;
-    rect2f tBounds;
+    XFont result;
+    memset(&result, 0, sizeof(result));
+    
+    v2i maxGlyphSize;
+    s32 maxDescent;
+    
+    s32 i;
+    
     wchar_t c[2];
     u32 *k;
     XSprite *v;
     
-    memset(&r, 0, sizeof(r));
-    temp = AddFontResourceW(path);
+    /* Add font resource to Windows */
+    s32 temp = AddFontResourceW(path);
     assert(temp == 1);
     
-    r.handle = CreateFontW(xfontheight(heightpoints), 
-                           0, 0, 0, FW_NORMAL, false, false, false, DEFAULT_CHARSET,
-                           OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-                           DEFAULT_PITCH, name);
-    assert(r.handle && r.handle != INVALID_HANDLE_VALUE);
+    /* Create the font */
+    result.handle = CreateFontW(xfontheight(heightpoints), 
+                                0, 0, 0, FW_NORMAL, false, false, 
+                                false, DEFAULT_CHARSET,
+                                OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, 
+                                CLEARTYPE_QUALITY, DEFAULT_PITCH, name);
     
-    BITMAPINFO info = xbmpinfo(xrend.gms, -xrend.gms);
-    r.bitmap = CreateDIBSection(xrend.dc, &info, DIB_RGB_COLORS, &r.bytes, 0, 0);
-    assert(xrend.gms>0);
-    memset(r.bytes, 0, xrend.gms*xrend.gms*4);
+    assert(result.handle && result.handle != INVALID_HANDLE_VALUE);
     
-    SelectObject(xrend.dc, r.bitmap);
-    SelectObject(xrend.dc, r.handle);
-    SetBkColor(xrend.dc, RGB(0,0,0));
-    SetTextColor(xrend.dc, RGB(255,255,255));
+    /* Create a bitmap to render glyphs into */
+    BITMAPINFO info = xbmpinfo(xrnd.glyphMakerSize, -xrnd.glyphMakerSize);
+    result.bitmap = CreateDIBSection(xrnd.deviceContext, &info, 
+                                     DIB_RGB_COLORS, &result.bytes, 0, 0);
+    assert(xrnd.glyphMakerSize>0);
+    memset(result.bytes, 0, xrnd.glyphMakerSize*xrnd.glyphMakerSize*4);
     
+    /* Configure the bitmap drawing to use black and white */
+    SelectObject(xrnd.deviceContext, result.bitmap);
+    SelectObject(xrnd.deviceContext, result.handle);
+    SetBkColor(xrnd.deviceContext, RGB(0,0,0));
+    SetTextColor(xrnd.deviceContext, RGB(255,255,255));
+    
+    /* Get text metrics for font */
     TEXTMETRICW metrics = {0};
-    GetTextMetricsW(xrend.dc, &metrics);
-    r.metrics = metrics;
+    GetTextMetricsW(xrnd.deviceContext, &metrics);
+    result.metrics = metrics;
+    result.lineadvance = (f32)metrics.tmHeight - metrics.tmInternalLeading;
+    result.charwidth = (f32)metrics.tmAveCharWidth;
+    result.glyphs = Table_new(512, cmp_glyph_unicodes, hash_unicode);
     
-    r.lineadvance = (f32)metrics.tmHeight - metrics.tmInternalLeading;
-    r.charwidth = (f32)metrics.tmAveCharWidth;
-    r.glyphs = Table_new(512, cmp_glyph_unicodes, hash_unicode);
-    maxGlyphW = maxGlyphH=maxDescent=-10000;
+    /* Render some glyphs from the ASCII range */
+    maxGlyphSize.x = maxGlyphSize.y = maxDescent = -10000;
     for (i=32; i<=126; ++i)
     {
-        if ((wchar_t)i == L'S')
-        {
-            int y = 3;
-        }
-        c[0]=(wchar_t)i; c[1]='\0';
+        c[0]=(wchar_t)i;
+        c[1]='\0';
         
+        /* Allocate memory for the hash table key/value pair */
         k = xalloc(sizeof *k);
+        v = xalloc(sizeof *v);
+        
+        /* Store key, generate the glyph sprite and store value */
         *k = (u32)i;
         
-        v = xalloc(sizeof *v);
-        *v = xglyphsprite(r, c, &tBounds, &tDescent);
-        if (tBounds.max.x!=0 && tBounds.max.y!=0)
+        rect2f tightBounds;
+        s32 tightDescent;
+        *v = xglyphsprite(result, c, &tightBounds, &tightDescent);
+        
+        /* Spaces wont have anything so tightBounds wont be found  */
+        if (tightBounds.max.x!=0 && tightBounds.max.y!=0)
         {
-            tW=(s32)(tBounds.max.x-tBounds.min.x);
-            tH=(s32)(tBounds.max.y-tBounds.min.y);
-            if (maxGlyphW<tW) maxGlyphW=tW;
-            if (maxGlyphH<tH) maxGlyphH=tH;
-            if (maxDescent<tDescent) maxDescent=tDescent;
+            /* Calculate tight size */
+            v2i tightSize = ini2i((s32)(tightBounds.max.x - tightBounds.min.x),
+                                  (s32)(tightBounds.max.y - tightBounds.min.y));
+            
+            /* Book keep maximum glyph size and maximum descent */
+            if (maxGlyphSize.x < tightSize.x) maxGlyphSize.x = tightSize.x;
+            if (maxGlyphSize.y < tightSize.y) maxGlyphSize.y = tightSize.y;
+            if (maxDescent < tightDescent) maxDescent = tightDescent;
         }
         
-        Table_set(r.glyphs, k, v);
+        /* Set the glyph in the hash table */
+        Table_set(result.glyphs, k, v);
     }
     
-    r.lineadvance = (f32)maxGlyphH;
-    r.maxdescent = (f32)maxDescent;
-    xstrcpy(r.path, MAX_PATH, path);
+    result.lineadvance = (f32)maxGlyphSize.y;
+    result.maxdescent = (f32)maxDescent;
+    xstrcpy(result.path, MAX_PATH, path);
     
-    return r;
+    return result;
 }
 
 XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
@@ -572,7 +568,7 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
     rect2f bounds;
     
     ps=(s32)(0.3f*font.lineadvance);
-    GetTextExtentPoint32W(xrend.dc, c, 1, &size);
+    GetTextExtentPoint32W(xrnd.deviceContext, c, 1, &size);
     al=ini2f(0,0);
     d=ini2fs(size.cx,size.cy);
     charsz=(s32)wcslen(c);
@@ -580,14 +576,14 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
     tBounds->min.x=tBounds->min.y=1000000;
     tBounds->max.x=tBounds->max.y=-1000000;
     
-    TextOutW(xrend.dc, ps,0, c, charsz);
+    TextOutW(xrnd.deviceContext, ps,0, c, charsz);
     
     bool foundTBox = false;
-    for (j=0; j<xrend.gms; ++j)
+    for (j=0; j<xrnd.glyphMakerSize; ++j)
     {
-        for (i=0; i<xrend.gms; ++i)
+        for (i=0; i<xrnd.glyphMakerSize; ++i)
         {
-            px = (u32 *)((u8 *)font.bytes + j*xrend.gms*4 + i*4);
+            px = (u32 *)((u8 *)font.bytes + j*xrnd.glyphMakerSize*4 + i*4);
             if (*px != 0)
             {
                 foundTBox = true;
@@ -617,7 +613,7 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
     
     if (foundTBox) {
         dstRow = b;
-        srcRow = ((u8 *)font.bytes + (s32)tBounds->min.y*xrend.gms*4 + (s32)tBounds->min.x*4);
+        srcRow = ((u8 *)font.bytes + (s32)tBounds->min.y*xrnd.glyphMakerSize*4 + (s32)tBounds->min.x*4);
         for (y=(s32)tBounds->min.y; y<(s32)tBounds->max.y; ++y)
         {
             srcPx = (u32 *)srcRow;
@@ -629,7 +625,7 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
                 *dstPx++ =  RGBA(255,255,255, a);
             }
             dstRow += 4*(s32)d.x;
-            srcRow += 4*xrend.gms;
+            srcRow += 4*xrnd.glyphMakerSize;
         }
     }
     
@@ -642,8 +638,8 @@ XSprite xglyphsprite(XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent)
 s32 xfontheight(s32 pointHeight)
 {
     s32 result = MulDiv(pointHeight, 
-                        GetDeviceCaps(xrend.dc, LOGPIXELSY), 
-                        GetDeviceCaps(xrend.dc, LOGPIXELSX));
+                        GetDeviceCaps(xrnd.deviceContext, LOGPIXELSY), 
+                        GetDeviceCaps(xrnd.deviceContext, LOGPIXELSX));
     return result;
 }
 
@@ -666,28 +662,24 @@ void xfontfree(XFont f)
     Table_free(f.glyphs);
 }
 
-Array_T *xbatch(s32 sz)
+Array_T *xbatch(s32 size)
 {
-    Array_T *r;
+    assert(narray(xrnd.spriteBatchArray) > xrnd.spriteBatchIndex);
     
-    assert(narray(xrend.sgs)>xrend.sgi);
+    Array_T *result = xrnd.spriteBatchArray + xrnd.spriteBatchIndex++;
+    *result = Array_new(size, sizeof(XSpriteCommand));
     
-    r = xrend.sgs + xrend.sgi++;
-    *r = Array_new(sz, sizeof(XSpriteCommand));
-    
-    return r;
+    return result;
 }
 
-Array_T *xmeshbatch(s32 sz)
+Array_T *xmeshbatch(s32 size)
 {
-    Array_T *r;
+    assert(narray(xrnd.meshBatchArray) > xrnd.meshBatchIndex);
     
-    assert(narray(xrend.mgs)>xrend.sgi);
+    Array_T *result = xrnd.meshBatchArray + xrnd.meshBatchIndex++;
+    *result = Array_new(size, sizeof(XMeshCommand));
     
-    r = xrend.mgs + xrend.mgi++;
-    *r = Array_new(sz, sizeof(XMeshCommand));
-    
-    return r;
+    return result;
 }
 
 void xpush_line_command(v2f a, v2f b, v4f color, f32 sort)
@@ -696,7 +688,7 @@ void xpush_line_command(v2f a, v2f b, v4f color, f32 sort)
     {
         a, b, color, sort,
     };
-    Array_push(&xrend.lg, &c);
+    Array_push(&xrnd.lineBatch, &c);
 }
 
 void xpush_rect_command(Array_T *group, v2f pos, v2f dim, rect2f uvs, 
@@ -755,7 +747,7 @@ void xstroke(v2f a, v2f b, v4f c, f32 w, f32 s)
     xline( a,  b, ini4f(1,1,1,1), 0);
 }
 
-void xarrow2d(Array_T *g, v2f a, v2f b, v4f c, XSprite head, v2f headsize, f32 s)
+void xarrow(Array_T *g, v2f a, v2f b, v4f c, XSprite head, v2f headsize, f32 s)
 {
     v2f dir;
     
@@ -944,10 +936,10 @@ create_sprites_shaders()
     }
     
     // And create the vertex shader if compilation went ok
-    ID3D11Device_CreateVertexShader(xrend.dvc,
+    ID3D11Device_CreateVertexShader(xrnd.d11Device,
                                     ID3D10Blob_GetBufferPointer(compiledVS),
                                     ID3D10Blob_GetBufferSize(compiledVS),
-                                    NULL, &xrend.svs);
+                                    NULL, &xrnd.texturedVertexShader);
     
     // Then the pixel shader code
     char *pixelShaderSource = 
@@ -975,9 +967,9 @@ create_sprites_shaders()
     {
         if (errorPixelMessages)
         {
-            wchar_t *msg = (wchar_t *)
+            char *msg = (char *)
             (ID3D10Blob_GetBufferPointer(errorPixelMessages));
-            OutputDebugStringW(msg);
+            OutputDebugStringA(msg);
             exit(1);
         }
         else
@@ -986,10 +978,10 @@ create_sprites_shaders()
         }
     }
     // And create the pixel shader if compilation went ok
-    ID3D11Device_CreatePixelShader(xrend.dvc,
+    ID3D11Device_CreatePixelShader(xrnd.d11Device,
                                    ID3D10Blob_GetBufferPointer(compiledPS),
                                    ID3D10Blob_GetBufferSize(compiledPS),
-                                   NULL, &xrend.sps);
+                                   NULL, &xrnd.texturedPixelShader);
     
     // Create the input layout
     
@@ -1011,10 +1003,9 @@ create_sprites_shaders()
     void *vsPointer = ID3D10Blob_GetBufferPointer(compiledVS);
     u32 vsSize = (u32)ID3D10Blob_GetBufferSize(compiledVS);
     
-    if (FAILED(ID3D11Device_CreateInputLayout(xrend.dvc, ied, narray(ied),
-                                              vsPointer, vsSize, &xrend.sil))) {
+    if (FAILED(ID3D11Device_CreateInputLayout(xrnd.d11Device, ied, narray(ied),
+                                              vsPointer, vsSize, &xrnd.texturedInputLayout)))
         exit(1);
-    }
 }
 
 function void
@@ -1071,10 +1062,10 @@ create_lines_shaders()
     }
     
     // And create the vertex shader if compilation went ok
-    ID3D11Device_CreateVertexShader(xrend.dvc,
+    ID3D11Device_CreateVertexShader(xrnd.d11Device,
                                     ID3D10Blob_GetBufferPointer(compiledVS),
                                     ID3D10Blob_GetBufferSize(compiledVS),
-                                    NULL, &xrend.lvs);
+                                    NULL, &xrnd.lineVertexShader);
     
     // Then the pixel shader code
     char *pixelShaderSource = 
@@ -1109,10 +1100,10 @@ create_lines_shaders()
         }
     }
     // And create the pixel shader if compilation went ok
-    ID3D11Device_CreatePixelShader(xrend.dvc,
+    ID3D11Device_CreatePixelShader(xrnd.d11Device,
                                    ID3D10Blob_GetBufferPointer(compiledPS),
                                    ID3D10Blob_GetBufferSize(compiledPS),
-                                   NULL, &xrend.lps);
+                                   NULL, &xrnd.linePixelShader);
     
     //  Create the input layout
     
@@ -1131,24 +1122,25 @@ create_lines_shaders()
     void *vsPointer = ID3D10Blob_GetBufferPointer(compiledVS);
     u32 vsSize = (u32)ID3D10Blob_GetBufferSize(compiledVS);
     
-    if (FAILED(ID3D11Device_CreateInputLayout(xrend.dvc, ied, narray(ied),
-                                              vsPointer, vsSize, &xrend.lil))) {
+    if (FAILED(ID3D11Device_CreateInputLayout(xrnd.d11Device, ied, narray(ied),
+                                              vsPointer, vsSize, &xrnd.lineInputLayout)))
         exit(1);
-    }
 }
 
 void create_sprites_vertex_buffer()
 {
-    u32 sz;
+    assert(xrnd.maxSimulSprites > 0);
     
-    assert(xrend.mss>0);
+    u32 size = xrnd.maxSimulSprites * 6 * sizeof(XVertex3D);
+    D3D11_BUFFER_DESC desc =
+    {
+        size, D3D11_USAGE_DYNAMIC, D3D11_BIND_VERTEX_BUFFER,
+        D3D11_CPU_ACCESS_WRITE, 0, sizeof(XVertex3D)
+    };
     
-    sz = xrend.mss*6*sizeof(XVertex3D);
-    D3D11_BUFFER_DESC d = { sz, D3D11_USAGE_DYNAMIC, D3D11_BIND_VERTEX_BUFFER,
-        D3D11_CPU_ACCESS_WRITE, 0, sizeof(XVertex3D), };
-    if (FAILED(ID3D11Device_CreateBuffer(xrend.dvc, &d, 0, &xrend.svb))) {
+    if (FAILED(ID3D11Device_CreateBuffer(xrnd.d11Device, &desc, 0, 
+                                         &xrnd.texturedVertexBuffer)))
         exit(1);
-    }
 }
 
 void create_lines_vertex_buffer()
@@ -1161,7 +1153,8 @@ void create_lines_vertex_buffer()
     D3D11_BUFFER_DESC d = { sz, D3D11_USAGE_DYNAMIC, D3D11_BIND_VERTEX_BUFFER,
         D3D11_CPU_ACCESS_WRITE, 0, sizeof(XLineVertex3D), };
     
-    if (FAILED(ID3D11Device_CreateBuffer(xrend.dvc, &d, 0, &xrend.lvb))) {
+    if (FAILED(ID3D11Device_CreateBuffer(xrnd.d11Device, &d, 0, 
+                                         &xrnd.lineVertexBuffer))) {
         exit(1);
     }
 }
@@ -1170,27 +1163,27 @@ void free_sprite_and_mesh_groups()
 {
     s32 i;
     
-    for (i=0; i<xrend.sgi; ++i)
-        Array_free(xrend.sgs + i);
+    for (i=0; i < xrnd.spriteBatchIndex; ++i)
+        Array_free(xrnd.spriteBatchArray + i);
     
-    for (i=0; i<xrend.mgi; ++i)
-        Array_free(xrend.mgs + i);
+    for (i=0; i<xrnd.meshBatchIndex; ++i)
+        Array_free(xrnd.meshBatchArray + i);
 }
 
 void reset_sprite_groups()
 {
     s32 i;
     
-    for (i = 0; i < xrend.sgi; ++i)
-        xrend.sgs[i].top = 0;
+    for (i = 0; i < xrnd.spriteBatchIndex; ++i)
+        xrnd.spriteBatchArray[i].top = 0;
 }
 
 void reset_mesh_groups()
 {
     s32 i;
     
-    for (i = 0; i < xrend.mgi; ++i)
-        xrend.mgs[i].top = 0;
+    for (i = 0; i < xrnd.meshBatchIndex; ++i)
+        xrnd.meshBatchArray[i].top = 0;
 }
 
 u32 produce_vertices_from_sprite_and_mesh_groups()
@@ -1206,14 +1199,14 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
     
     /*  Count number of vertices from all sprite groups                    */
     
-    for (i=0, spritesVertexCount=0; i<xrend.sgi; ++i)
-        spritesVertexCount += 6*(xrend.sgs[i].top);
+    for (i=0, spritesVertexCount=0; i < xrnd.spriteBatchIndex; ++i)
+        spritesVertexCount += 6*(xrnd.spriteBatchArray[i].top);
     
     /*  Count number of vertices from all mesh groups                      */
     
-    for (i=0, meshsVertexCount=0; i<xrend.mgi; ++i)
-        for (j=0; j<xrend.mgs[i].top; ++j)
-        meshsVertexCount += ((XMeshCommand*)Array_get(xrend.mgs[i], j))->vertices.top;
+    for (i=0, meshsVertexCount=0; i < xrnd.meshBatchIndex; ++i)
+        for (j=0; j < xrnd.meshBatchArray[i].top; ++j)
+        meshsVertexCount += ((XMeshCommand*)Array_get(xrnd.meshBatchArray[i], j))->vertices.top;
     
     v = 0;
     vi = 0;
@@ -1223,9 +1216,9 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
     
     /*  Loop through all sprite groups and produces the vertices.          */
     if (spritesVertexCount>0) {
-        for (i=0; i<xrend.sgi; ++i)
+        for (i=0; i<xrnd.spriteBatchIndex; ++i)
         {
-            batch = xrend.sgs + i;
+            batch = xrnd.spriteBatchArray + i;
             if (batch->top > 0)
             {
                 for (j=0; j < batch->top; ++j)
@@ -1253,17 +1246,17 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
                     f32 vmax = scmd->uv.max.y;
                     f32 sort = scmd->sort;
                     
-                    XVertex3D va = { pa.x, pa.y, sort, umin, (xrend.td ? vmax : vmin), c.r,c.g,c.b,c.a };
-                    XVertex3D vb = { pb.x, pb.y, sort, umax, (xrend.td ? vmax : vmin), c.r,c.g,c.b,c.a };
-                    XVertex3D vc = { pc.x, pc.y, sort, umax, (xrend.td ? vmin : vmax), c.r,c.g,c.b,c.a };
-                    XVertex3D vd = { pd.x, pd.y, sort, umin, (xrend.td ? vmin : vmax), c.r,c.g,c.b,c.a };
+                    XVertex3D va = { pa.x, pa.y, sort, umin, (xrnd.topDown ? vmax : vmin), c.r,c.g,c.b,c.a };
+                    XVertex3D vb = { pb.x, pb.y, sort, umax, (xrnd.topDown ? vmax : vmin), c.r,c.g,c.b,c.a };
+                    XVertex3D vc = { pc.x, pc.y, sort, umax, (xrnd.topDown ? vmin : vmax), c.r,c.g,c.b,c.a };
+                    XVertex3D vd = { pd.x, pd.y, sort, umin, (xrnd.topDown ? vmin : vmax), c.r,c.g,c.b,c.a };
                     
                     v[vi++] = va;
-                    v[vi++] = (xrend.td ? vb : vc);
-                    v[vi++] = (xrend.td ? vc : vb);
+                    v[vi++] = (xrnd.topDown ? vb : vc);
+                    v[vi++] = (xrnd.topDown ? vc : vb);
                     v[vi++] = va;
-                    v[vi++] = (xrend.td ? vc : vd);
-                    v[vi++] = (xrend.td ? vd : vc);
+                    v[vi++] = (xrnd.topDown ? vc : vd);
+                    v[vi++] = (xrnd.topDown ? vd : vc);
                 }
             }
         }
@@ -1272,9 +1265,9 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
     /*  Loop through all mesh groups and produces the vertices.          */
     
     if (meshsVertexCount>0) {
-        for (i=0; i<xrend.mgi; ++i)
+        for (i=0; i < xrnd.meshBatchIndex; ++i)
         {
-            batch = xrend.mgs + i;
+            batch = xrnd.meshBatchArray + i;
             if (batch->top > 0)
             {
                 for (j=0; j < batch->top; ++j)
@@ -1301,10 +1294,17 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
         }
     }
     
-    ID3D11DeviceContext_Map(xrend.ctx, (ID3D11Resource *)xrend.svb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
-    memcpy(mr.pData, v, vi*sizeof(XVertex3D)); 
-    ID3D11DeviceContext_Unmap(xrend.ctx, (ID3D11Resource *)xrend.svb, 0);
-    xfree(v);
+    if (spritesVertexCount+meshsVertexCount > 0)
+    {
+        ID3D11DeviceContext_Map(xrnd.d11DeviceContext, 
+                                (ID3D11Resource *)xrnd.texturedVertexBuffer, 0, 
+                                D3D11_MAP_WRITE_DISCARD, 0, &mr);
+        memcpy(mr.pData, v, vi*sizeof(XVertex3D)); 
+        ID3D11DeviceContext_Unmap(xrnd.d11DeviceContext, 
+                                  (ID3D11Resource *)xrnd.texturedVertexBuffer, 0);
+        
+        xfree(v);
+    }
     
     reset_sprite_groups();
     reset_mesh_groups();
@@ -1314,12 +1314,12 @@ u32 produce_vertices_from_sprite_and_mesh_groups()
 
 void free_line_group()
 {
-    Array_free(&xrend.lg);
+    Array_free(&xrnd.lineBatch);
 }
 
 void reset_line_group()
 {
-    xrend.lg.top = 0;
+    xrnd.lineBatch.top = 0;
 }
 
 u32 produce_vertices_from_line_group()
@@ -1330,14 +1330,14 @@ u32 produce_vertices_from_line_group()
     D3D11_MAPPED_SUBRESOURCE mr;
     
     vc = 0;
-    vc += 2 * xrend.lg.top;
+    vc += 2 * xrnd.lineBatch.top;
     
     if (vc>0) {
         v = xnalloc(vc, XLineVertex3D);
         vi = 0;
         
-        for (i = 0; i < xrend.lg.top; ++i) {
-            cmd = Array_get(xrend.lg, i);
+        for (i = 0; i < xrnd.lineBatch.top; ++i) {
+            cmd = Array_get(xrnd.lineBatch, i);
             
             XLineVertex3D a =
             {
@@ -1355,9 +1355,12 @@ u32 produce_vertices_from_line_group()
             v[vi++] = b;
         }
         
-        ID3D11DeviceContext_Map(xrend.ctx, (ID3D11Resource *)xrend.lvb, 0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
+        ID3D11DeviceContext_Map(xrnd.d11DeviceContext, 
+                                (ID3D11Resource *)xrnd.lineVertexBuffer, 
+                                0, D3D11_MAP_WRITE_DISCARD, 0, &mr);
         memcpy(mr.pData, v, vc*sizeof(XLineVertex3D));
-        ID3D11DeviceContext_Unmap(xrend.ctx, (ID3D11Resource *)xrend.lvb, 0);
+        ID3D11DeviceContext_Unmap(xrnd.d11DeviceContext, 
+                                  (ID3D11Resource *)xrnd.lineVertexBuffer, 0);
         xfree(v);
         
         reset_line_group();
@@ -1369,342 +1372,249 @@ u32 produce_vertices_from_line_group()
 void render_pass(D3D11_PRIMITIVE_TOPOLOGY tp, ID3D11InputLayout *il, u32 vc, ID3D11Buffer *vb, u32 vbst,
                  ID3D11VertexShader *vs, ID3D11PixelShader *ps)
 {
-    ID3D11DeviceContext_IASetPrimitiveTopology(xrend.ctx, tp);
-    ID3D11DeviceContext_IASetInputLayout(xrend.ctx, il);
+    ID3D11DeviceContext_IASetPrimitiveTopology(xrnd.d11DeviceContext, tp);
+    ID3D11DeviceContext_IASetInputLayout(xrnd.d11DeviceContext, il);
     ID3D11Buffer *vbs[1] = { vb };
     UINT vbss[1] = { vbst };
     UINT vbos[1] = { 0 };
-    ID3D11DeviceContext_IASetVertexBuffers(xrend.ctx, 0, 1, vbs, vbss, vbos);
-    ID3D11DeviceContext_VSSetShader(xrend.ctx, vs, NULL, 0);
-    ID3D11DeviceContext_VSSetConstantBuffers(xrend.ctx, 0, 1, &xrend.vcb);
-    ID3D11DeviceContext_PSSetShader(xrend.ctx, ps, NULL, 0);
-    ID3D11DeviceContext_PSSetSamplers(xrend.ctx, 0, 1, &xrend.ss);
-    ID3D11DeviceContext_PSSetShaderResources(xrend.ctx, 0, 1, &xrend.asrv);
-    D3D11_VIEWPORT vps[1] =  { { 0, 0, xrend.bbs.x, xrend.bbs.y, 0.0f, 1.0f } };
-    ID3D11DeviceContext_RSSetViewports(xrend.ctx, 1, vps);
-    D3D11_RECT scs[1] = { { 0, 0, (LONG)xrend.bbs.x, (LONG)xrend.bbs.y } };
-    ID3D11DeviceContext_RSSetScissorRects(xrend.ctx, 1, scs);
-    ID3D11DeviceContext_RSSetState(xrend.ctx, xrend.rs);
-    ID3D11DeviceContext_OMSetDepthStencilState(xrend.ctx, xrend.dss, 0);
-    ID3D11DeviceContext_OMSetBlendState(xrend.ctx, xrend.bls, NULL, 0xffffffff);
-    ID3D11DeviceContext_Draw(xrend.ctx, vc, 0);
+    ID3D11DeviceContext_IASetVertexBuffers(xrnd.d11DeviceContext, 0, 1, vbs, vbss, vbos);
+    ID3D11DeviceContext_VSSetShader(xrnd.d11DeviceContext, vs, NULL, 0);
+    ID3D11DeviceContext_VSSetConstantBuffers(xrnd.d11DeviceContext, 0, 1, &xrnd.vertexCBuffer);
+    ID3D11DeviceContext_PSSetShader(xrnd.d11DeviceContext, ps, NULL, 0);
+    ID3D11DeviceContext_PSSetSamplers(xrnd.d11DeviceContext, 0, 1, &xrnd.samplerState);
+    ID3D11DeviceContext_PSSetShaderResources(xrnd.d11DeviceContext, 0, 1, &xrnd.textureAtlasSRV);
+    D3D11_VIEWPORT vps[1] =  { { 0, 0, xrnd.backBufferSize.x, xrnd.backBufferSize.y, 0.0f, 1.0f } };
+    ID3D11DeviceContext_RSSetViewports(xrnd.d11DeviceContext, 1, vps);
+    D3D11_RECT scs[1] = { { 0, 0, (LONG)xrnd.backBufferSize.x, (LONG)xrnd.backBufferSize.y } };
+    ID3D11DeviceContext_RSSetScissorRects(xrnd.d11DeviceContext, 1, scs);
+    ID3D11DeviceContext_RSSetState(xrnd.d11DeviceContext, xrnd.rasterizerState);
+    ID3D11DeviceContext_OMSetDepthStencilState(xrnd.d11DeviceContext, xrnd.depthStencilState, 0);
+    ID3D11DeviceContext_OMSetBlendState(xrnd.d11DeviceContext, xrnd.blendState, NULL, 0xffffffff);
+    ID3D11DeviceContext_Draw(xrnd.d11DeviceContext, vc, 0);
 }
 
 function void
 swap_chain_resize()
 {
     RECT rect;
-    if (!GetClientRect(xrend.wh, &rect)) {
+    if (!GetClientRect(xrnd.windowHandle, &rect)) {
         exit(1);
     }
     
-    v2f bbs = {
+    v2f backBufferSize = {
         (f32)(rect.right - rect.left),
         (f32)(rect.bottom - rect.top),
     };
     
-    if (((UINT)bbs.x != 0 && (UINT)bbs.y != 0) &&
-        (((UINT)bbs.x != xrend.bbs.x) || ((UINT)bbs.y != xrend.bbs.y)))
+    if (((UINT)backBufferSize.x != 0 && (UINT)backBufferSize.y != 0) &&
+        (((UINT)backBufferSize.x != xrnd.backBufferSize.x) || 
+         ((UINT)backBufferSize.y != xrnd.backBufferSize.y)))
     {
-        xrend.bbs = bbs;
+        xrnd.backBufferSize = backBufferSize;
         
-        ID3D11RenderTargetView_Release(xrend.rtv);
-        ID3D11DepthStencilView_Release(xrend.dsv);
-        ID3D11Texture2D_Release(xrend.bbt);
-        ID3D11Texture2D_Release(xrend.dsbt);
+        ID3D11RenderTargetView_Release(xrnd.renderTargetView);
+        ID3D11DepthStencilView_Release(xrnd.depthStencilView);
+        ID3D11Texture2D_Release(xrnd.backBufferTexture2D);
+        ID3D11Texture2D_Release(xrnd.depthStencilBufferTexture2D);
         
-        IDXGISwapChain_ResizeBuffers(xrend.swc, 2, (UINT)bbs.x,(UINT)bbs.y, DXGI_FORMAT_R8G8B8A8_UNORM, 0);
+        IDXGISwapChain_ResizeBuffers(xrnd.d11SwapChain, 2, 
+                                     (UINT)backBufferSize.x,(UINT)backBufferSize.y, 
+                                     DXGI_FORMAT_R8G8B8A8_UNORM, 0);
         
-        if (FAILED(IDXGISwapChain_GetBuffer(xrend.swc, 0, &IID_ID3D11Texture2D, (void **)&xrend.bbt)))
+        if (FAILED(IDXGISwapChain_GetBuffer(xrnd.d11SwapChain, 0, &IID_ID3D11Texture2D, 
+                                            (void **)&xrnd.backBufferTexture2D)))
             exit(1);
         
-        if (FAILED(ID3D11Device_CreateRenderTargetView(xrend.dvc, (ID3D11Resource *)xrend.bbt, 0, &xrend.rtv)))
+        if (FAILED(ID3D11Device_CreateRenderTargetView(xrnd.d11Device, 
+                                                       (ID3D11Resource *)xrnd.backBufferTexture2D, 
+                                                       0, &xrnd.renderTargetView)))
             exit(1);
         
-        xrend.dsbd.Width = (UINT)xrend.bbs.x;
-        xrend.dsbd.Height = (UINT)xrend.bbs.y;
+        xrnd.depthStencilBufferTexDesc.Width = (UINT)xrnd.backBufferSize.x;
+        xrnd.depthStencilBufferTexDesc.Height = (UINT)xrnd.backBufferSize.y;
         
-        if (FAILED(ID3D11Device_CreateTexture2D(xrend.dvc, &xrend.dsbd, 0, &xrend.dsbt)))
+        if (FAILED(ID3D11Device_CreateTexture2D(xrnd.d11Device, &xrnd.depthStencilBufferTexDesc, 0, 
+                                                &xrnd.depthStencilBufferTexture2D)))
             exit(1);
         
-        if (FAILED(ID3D11Device_CreateDepthStencilView(xrend.dvc, (ID3D11Resource *)xrend.dsbt, 
-                                                       &xrend.dsvd, &xrend.dsv)))
+        if (FAILED(ID3D11Device_CreateDepthStencilView(xrnd.d11Device, 
+                                                       (ID3D11Resource *)xrnd.depthStencilBufferTexture2D, 
+                                                       &xrnd.depthStencilViewDesc,
+                                                       &xrnd.depthStencilView)))
             exit(1);
     }
     
-    xrendresized();
+    xrender_resized();
 }
 
-typedef struct
+void xrender_init(XRenderConfig config)
 {
-    char chunkID[4];
-    u32 chunkSize;
-    char format[4];
-} WavRIFFHeader;
-
-typedef struct
-{
-    char subChunkID[4];
-    u32 subChunkSize;
-    u16 audioFormat;
-    u16 numChannels;
-    u32 sampleRate;
-    u32 byteRate;
-    u16 blockAlign;
-    u16 bitsPerSample;
-} WavFMTChunk;
-
-typedef struct
-{
-    char subChunkID[4];
-    u32 subChunkSize;
-} WavDataChunk;
-
-typedef struct
-{
-    WavRIFFHeader riffHeader;
-    WavFMTChunk fmtChunk;
-    WavDataChunk dataChunk;
+    DXGI_FORMAT atf; // depth stencil buffer format, atlas tex format
     
-    wchar_t fileName[260];
-    s16 *sampleData;
-    u32 sampleCount;
-} Sound;
-
-function Sound
-load_wav(wchar_t *filePath, wchar_t *fileName)
-{
-    Sound result = {0};
+    /* Create a DC to render glyphs with  */
+    xrnd.deviceContext = CreateCompatibleDC(GetDC(0));
     
-    // Open file
-    FILE *file;
-    _wfopen_s(&file, filePath, L"rb");
+    /* Register a window class */
+    WNDCLASSEXW windowClass = xwndclass(config.wndproc);
+    if (RegisterClassExW(&windowClass) == 0) exit(1);
     
-    // If the file exists
-    if (file != 0)
-    {
-        // Read the RIFF
-        fread(&result.riffHeader, sizeof(WavRIFFHeader), 1, file);
-        
-        // Read the FMT chunk
-        fread(&result.fmtChunk, sizeof(WavFMTChunk), 1, file);
-        
-        // Read the Data chunk
-        fread(&result.dataChunk, sizeof(WavDataChunk), 1, file);
-        
-        // Calculate sample count
-        result.sampleCount = (result.dataChunk.subChunkSize
-                              / (result.fmtChunk.numChannels *
-                                 (result.fmtChunk.bitsPerSample/8)));
-        
-        // If the audio format is PCM
-        if (result.fmtChunk.audioFormat == 1)
-        {
-            // Allocate space for audio bytes
-            result.sampleData = xalloc(result.dataChunk.subChunkSize);
-            if (result.sampleData != 0)
-            {
-                // Read the audio bytes
-                fread(result.sampleData, result.dataChunk.subChunkSize, 1, file);
-                
-                // Copy the file name
-                xstrcpy(result.fileName, 260, fileName);
-            }
-            
-        }
-        
-        // Close the file handle
-        fclose(file);
-    }
+    /* Window style based on config */
+    xrnd.windowClassStyleEx =  config.windowClassStyleEx;
+    xrnd.windowClassStyle   = (config.windowClassStyle == 0) ? 
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE : config.windowClassStyle;
     
-    return result;
-}
-
-// Direct Sound 8
-// Initialize DirectSound
-function bool
-dsound8_init(void)
-{
-    // Create DirectSound object
-    if (FAILED(DirectSoundCreate8(0, &xrend.dsound, 0))) return false;
+    /* Window pos and size */
+    xrnd.windowPos  = (config.windowPos.x==0 && config.windowPos.y==0) ? 
+        xrnd.windowPos = ini2f(0,0) : config.windowPos;
     
-    // Set the wav format
-    xrend.wf.wFormatTag = WAVE_FORMAT_PCM;
-    xrend.wf.nChannels = 2;
-    xrend.wf.nSamplesPerSec = 44100;
-    xrend.wf.wBitsPerSample = 16;
-    xrend.wf.nBlockAlign = (xrend.wf.nChannels*xrend.wf.wBitsPerSample)/8;
-    xrend.wf.nAvgBytesPerSec = xrend.wf.nSamplesPerSec*xrend.wf.nBlockAlign;
+    xrnd.windowSize = (config.windowSize.x==0 && config.windowSize.y==0) ? 
+        xrnd.windowSize = ini2f(800,600) : config.windowSize;
     
-    // Set cooperative level
-    if (FAILED(IDirectSound8_SetCooperativeLevel(xrend.dsound, 
-                                                 xrend.wh, 
-                                                 DSSCL_PRIORITY)))
-        return false;
+    RECT size = 
+    { 
+        (u32)xrnd.windowPos.x, (u32)xrnd.windowPos.y,
+        (u32)(xrnd.windowPos.x + xrnd.windowSize.x), (u32)(xrnd.windowPos.y + xrnd.windowSize.y)
+    };
     
-    // Primary buffer is only used to set the format
-    IDirectSoundBuffer *primaryBuffer;
-    
-    DSBUFFERDESC primaryBufferDesc = {0};
-    primaryBufferDesc.dwSize = sizeof(primaryBufferDesc);
-    primaryBufferDesc.dwFlags = DSBCAPS_PRIMARYBUFFER;
-    
-    if (FAILED(IDirectSound8_CreateSoundBuffer(xrend.dsound, 
-                                               &primaryBufferDesc, 
-                                               &primaryBuffer, 
-                                               0)))
-        return false;
-    
-    if (FAILED(IDirectSoundBuffer_SetFormat(primaryBuffer, &xrend.wf)))
-        return false;
-    
-    return true;
-}
-
-IDirectSoundBuffer *dsound8_create_buffer(wchar_t *filePath, wchar_t *fileName)
-{
-    Sound sound = load_wav(filePath, fileName);
-    
-    IDirectSoundBuffer *result = 0;
-    if (xrend.abi == narray(xrend.abs))
-        return false;
-    
-    // The actual audio buffer description
-    DSBUFFERDESC d = {0};
-    d.dwSize = sizeof(d);
-    d.dwFlags = 0;
-    d.dwBufferBytes = sound.sampleCount*2*sizeof(s16);
-    d.lpwfxFormat = &xrend.wf;
-    
-    // Create the actual audio buffer
-    if (FAILED(IDirectSound8_CreateSoundBuffer(xrend.dsound,
-                                               &d, 
-                                               &xrend.abs[xrend.abi],
-                                               0)))
-        return false;
-    
-    result = xrend.abs[xrend.abi];
-    
-    xrend.abi++;
-    
-    return result;
-}
-
-
-void xrendinit(XRendConfig config)
-{
-    ID3D11InfoQueue* iq;
-    DXGI_FORMAT dsbf, atf; // depth stencil buffer format, atlas tex format
-    TRACKMOUSEEVENT tme;
-    
-    xrend.dc = CreateCompatibleDC(GetDC(0));
-    
-    WNDCLASSEXW wc = xwndclass(config.wndproc);
-    if (RegisterClassExW(&wc) == 0) exit(1);
-    
-    xrend.wexs = (config.winClassStyleEx == 0) ? xrend.wexs = 0 : config.winClassStyleEx;
-    xrend.wcs  = (config.winClassStyle == 0) ? xrend.wcs = WS_OVERLAPPEDWINDOW | WS_VISIBLE : config.winClassStyle;
-    xrend.wp   = (config.winPos.x==0 && config.winPos.y==0) ? xrend.wp = ini2f(0,0) : config.winPos;
-    xrend.wd   = (config.winDim.x==0 && config.winDim.y==0) ? xrend.wd = ini2f(800,600) : config.winDim;
-    xstrcpy(xrend.wt, 256, (config.winTitle == 0) ? L"XLib's XRender" : config.winTitle);
-    xrend.td   = config.topDown;
-    xrend.sas  = (config.spriteAtlasSize == 0) ? xrend.sas = 4096  : config.spriteAtlasSize;
-    xrend.mss  = (config.maxSimulSprites == 0) ? xrend.mss = 10000 : config.maxSimulSprites;
-    xrend.msl  = (config.maxSimulLines   == 0) ? xrend.msl = 4096  : config.maxSimulLines;
-    xrend.gms  = (config.glyphMakerSize  == 0) ? xrend.gms = 256   : config.glyphMakerSize;
-    xrend.cc   = (config.clearColor.a == 0) ? xrend.cc = ini4f(.08f,.05f,.02f,1) : config.clearColor;
-    xrend.bbs = xrend.wd;
-    
-    RECT size = { (u32)xrend.wp.x, (u32)xrend.wp.y,
-        (u32)(xrend.wp.x + xrend.wd.x), (u32)(xrend.wp.y + xrend.wd.y) };
     AdjustWindowRect(&size, WS_OVERLAPPEDWINDOW, FALSE);
-    xrend.wd = ini2f((f32)(size.right - size.left), (f32)(size.bottom - size.top));
+    xrnd.windowSize = ini2f((f32)(size.right - size.left), (f32)(size.bottom - size.top));
     
-    xrend.wh = CreateWindowExW(xrend.wexs, L"xwindow_class", xrend.wt, xrend.wcs,
-                               (s32)xrend.wp.x, (s32)xrend.wp.y, (s32)xrend.wd.x, (s32)xrend.wd.y,
-                               NULL, NULL, GetModuleHandle(0), NULL);
-    if (xrend.wh == NULL)
+    /* Window title */
+    xstrcpy(xrnd.windowTitle, 256, (config.windowTitle == 0) ? 
+            L"XLib's xrnder" : config.windowTitle);
+    
+    /* More renderer configuration */
+    xrnd.topDown = config.topDown;
+    xrnd.backBufferSize = xrnd.windowSize;
+    xrnd.maxSimulSprites = (config.maxSimulSprites == 0) ? 10000 : config.maxSimulSprites;
+    xrnd.maxSimulLines   = (config.maxSimulLines   == 0) ? 4096  : config.maxSimulLines;
+    xrnd.glyphMakerSize  = (config.glyphMakerSize  == 0) ? xrnd.glyphMakerSize = 256   : config.glyphMakerSize;
+    xrnd.clearColor      = (config.clearColor.a == 0) ? ini4f(.08f,.05f,.02f,1) : config.clearColor;
+    
+    
+    /* Create the window */
+    xrnd.windowHandle = CreateWindowExW(xrnd.windowClassStyleEx, L"xwindow_class", xrnd.windowTitle, 
+                                        xrnd.windowClassStyle, (s32)xrnd.windowPos.x, (s32)xrnd.windowPos.y, 
+                                        (s32)xrnd.windowSize.x, (s32)xrnd.windowSize.y, NULL, NULL, GetModuleHandle(0), NULL);
+    
+    if (xrnd.windowHandle == NULL)
         exit(1);
     
-    // Request notification when the mouse leaves the non-client area
-    tme.cbSize = sizeof(TRACKMOUSEEVENT);
-    tme.dwFlags = TME_NONCLIENT | TME_LEAVE;
-    tme.hwndTrack = xrend.wh;
-    TrackMouseEvent(&tme);
+    /* Request notification when the mouse leaves the non-client area */
+    TRACKMOUSEEVENT trackMouseEvent;
+    trackMouseEvent.cbSize = sizeof(TRACKMOUSEEVENT);
+    trackMouseEvent.dwFlags = TME_NONCLIENT | TME_LEAVE;
+    trackMouseEvent.hwndTrack = xrnd.windowHandle;
+    TrackMouseEvent(&trackMouseEvent);
     
-    DXGI_MODE_DESC bbd = { (s32)xrend.bbs.x, (s32)xrend.bbs.y, xrational(60,1), DXGI_FORMAT_R8G8B8A8_UNORM,
-        DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_MODE_SCALING_CENTERED, };
-    DXGI_SAMPLE_DESC bbsd = { .Count = 1,  .Quality = 0, };
-    DXGI_SWAP_CHAIN_DESC scd = { bbd, bbsd, DXGI_USAGE_RENDER_TARGET_OUTPUT,
-        2, xrend.wh, true, DXGI_SWAP_EFFECT_FLIP_DISCARD, 0, };
+    /* Direct3D 11 backbuffer size, refresh rate, scale, swap chain, feature levels...  */
+    DXGI_MODE_DESC modeDesc = 
+    {
+        (s32)xrnd.backBufferSize.x, (s32)xrnd.backBufferSize.y,
+        xrational(60,1), DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED, DXGI_MODE_SCALING_CENTERED
+    };
     
-    xfeatureleves(xrend.fl, &xrend.flc);
+    DXGI_SAMPLE_DESC backBufferSize = { .Count = 1,  .Quality = 0 };
+    
+    DXGI_SWAP_CHAIN_DESC swapChainDesc =
+    {
+        modeDesc, backBufferSize, 
+        DXGI_USAGE_RENDER_TARGET_OUTPUT,
+        2, xrnd.windowHandle, true, 
+        DXGI_SWAP_EFFECT_FLIP_DISCARD, 0
+    };
+    
+    xfeatureleves(xrnd.featureLevelArray, &xrnd.featureLevelIndex);
     if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL,
-                                             D3D11_CREATE_DEVICE_DEBUG, xrend.fl, xrend.flc, D3D11_SDK_VERSION, &scd, &xrend.swc,
-                                             &xrend.dvc, NULL, &xrend.ctx)))
+                                             D3D11_CREATE_DEVICE_DEBUG, 
+                                             xrnd.featureLevelArray, xrnd.featureLevelIndex, 
+                                             D3D11_SDK_VERSION, &swapChainDesc, &xrnd.d11SwapChain,
+                                             &xrnd.d11Device, NULL, &xrnd.d11DeviceContext)))
         exit(1);
     
-    if (FAILED(ID3D11Device_QueryInterface(xrend.dvc, &IID_ID3D11Debug, (void**)&xrend.dbg)))
+    if (FAILED(IDXGISwapChain_GetBuffer(xrnd.d11SwapChain, 0, &IID_ID3D11Texture2D, 
+                                        (void**)&xrnd.backBufferTexture2D)))
         exit(1);
     
-    ID3D11Device_QueryInterface(xrend.dvc, &IID_ID3D11InfoQueue, (void**)&iq);
-    ID3D11InfoQueue_SetBreakOnSeverity(iq, D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
-    ID3D11InfoQueue_Release(iq);
-    
-    if (FAILED(IDXGISwapChain_GetBuffer(xrend.swc, 0, &IID_ID3D11Texture2D, (void**)&xrend.bbt)))
+    /* Direct3D 11 Debug interface */
+    if (FAILED(ID3D11Device_QueryInterface(xrnd.d11Device, &IID_ID3D11Debug, 
+                                           (void**)&xrnd.d11Debug)))
         exit(1);
     
-    dsbf = DXGI_FORMAT_D24_UNORM_S8_UINT;
-    D3D11_TEXTURE2D_DESC dsbtd = { (s32)xrend.bbs.x, (s32)xrend.bbs.y, 0, 1, dsbf, bbsd,
-        D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL, 0, 0, };
-    xrend.dsbd = dsbtd;
+    ID3D11InfoQueue* infoQueue;
+    ID3D11Device_QueryInterface(xrnd.d11Device, &IID_ID3D11InfoQueue, (void**)&infoQueue);
+    ID3D11InfoQueue_SetBreakOnSeverity(infoQueue, D3D11_MESSAGE_SEVERITY_WARNING, TRUE);
+    ID3D11InfoQueue_Release(infoQueue);
     
-    if (FAILED(ID3D11Device_CreateTexture2D(xrend.dvc, &dsbtd, 0, &xrend.dsbt)))
+    
+    DXGI_FORMAT depthStencilBufferFormat = DXGI_FORMAT_D24_UNORM_S8_UINT;
+    D3D11_TEXTURE2D_DESC depthStencilBufferTexDesc =
+    {
+        (s32)xrnd.backBufferSize.x, (s32)xrnd.backBufferSize.y,
+        0, 1, depthStencilBufferFormat, backBufferSize, 
+        D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL, 0, 0
+    };
+    
+    xrnd.depthStencilBufferTexDesc = depthStencilBufferTexDesc;
+    
+    if (FAILED(ID3D11Device_CreateTexture2D(xrnd.d11Device, &depthStencilBufferTexDesc, 0, 
+                                            &xrnd.depthStencilBufferTexture2D)))
         exit(1);
     
-    xrend.sa.size = xrend.sas;
-    xrend.sa.at.x = xrend.sa.at.y = xrend.sa.bottom = 0;
+    xrnd.textureAtlas.size = (config.textureAtlasSize == 0) ? 
+        4096 : config.textureAtlasSize;
+    
+    xrnd.textureAtlas.at.x = xrnd.textureAtlas.at.y = xrnd.textureAtlas.bottom = 0;
     
     atf = DXGI_FORMAT_R8G8B8A8_UNORM;
-    D3D11_TEXTURE2D_DESC atd = { xrend.sa.size, xrend.sa.size, 1, 1, atf, {1,0},
+    D3D11_TEXTURE2D_DESC atd = { xrnd.textureAtlas.size, xrnd.textureAtlas.size, 1, 1, atf, {1,0},
         D3D11_USAGE_DYNAMIC, D3D11_BIND_SHADER_RESOURCE, D3D11_CPU_ACCESS_WRITE, 0, };
     
-    u32 ams = xrend.sa.size * xrend.sa.size * 4;
-    xrend.sa.bytes = (u8*)xalloc(ams);
+    u32 ams = xrnd.textureAtlas.size * xrnd.textureAtlas.size * 4;
+    xrnd.textureAtlas.bytes = (u8*)xalloc(ams);
     
-    dsound8_init();
-    
-    D3D11_SUBRESOURCE_DATA ad = { xrend.sa.bytes, (UINT)(xrend.sa.size * 4), 0 };
-    if (FAILED(ID3D11Device_CreateTexture2D(xrend.dvc, &atd, &ad, &xrend.sat)))
+    D3D11_SUBRESOURCE_DATA ad = { xrnd.textureAtlas.bytes, (UINT)(xrnd.textureAtlas.size * 4), 0 };
+    if (FAILED(ID3D11Device_CreateTexture2D(xrnd.d11Device, &atd, &ad, 
+                                            &xrnd.textureAtlasTexture2D)))
         exit(1);
     
-    if (FAILED(ID3D11Device_CreateRenderTargetView(xrend.dvc, (ID3D11Resource*)xrend.bbt, 0, &xrend.rtv)))
+    if (FAILED(ID3D11Device_CreateRenderTargetView(xrnd.d11Device, 
+                                                   (ID3D11Resource*)xrnd.backBufferTexture2D, 
+                                                   0, &xrnd.renderTargetView)))
         exit(1);
     
-    xrend.dsvd = xdsviewdesc(dsbf, D3D11_DSV_DIMENSION_TEXTURE2D);
-    if (FAILED(ID3D11Device_CreateDepthStencilView(xrend.dvc, (ID3D11Resource*)xrend.dsbt, &xrend.dsvd, &xrend.dsv)))
+    xrnd.depthStencilViewDesc = xdsviewdesc(depthStencilBufferFormat, 
+                                            D3D11_DSV_DIMENSION_TEXTURE2D);
+    if (FAILED(ID3D11Device_CreateDepthStencilView(xrnd.d11Device, 
+                                                   (ID3D11Resource*)xrnd.depthStencilBufferTexture2D, 
+                                                   &xrnd.depthStencilViewDesc,
+                                                   &xrnd.depthStencilView)))
         exit(1);
     
     D3D11_SHADER_RESOURCE_VIEW_DESC asrvd = xshadresview(atf, D3D_SRV_DIMENSION_TEXTURE2D);
-    if (FAILED(ID3D11Device_CreateShaderResourceView(xrend.dvc, (ID3D11Resource*)xrend.sat, &asrvd, &xrend.asrv)))
+    if (FAILED(ID3D11Device_CreateShaderResourceView(xrnd.d11Device, 
+                                                     (ID3D11Resource*)xrnd.textureAtlasTexture2D, 
+                                                     &asrvd, &xrnd.textureAtlasSRV)))
         exit(1);
     
     D3D11_DEPTH_STENCIL_DESC dsd = xdepthstencildesc();
     
-    if (FAILED(ID3D11Device_CreateDepthStencilState(xrend.dvc, &dsd, &xrend.dss)))
+    if (FAILED(ID3D11Device_CreateDepthStencilState(xrnd.d11Device, &dsd, &xrnd.depthStencilState)))
         exit(1);
     
     D3D11_BLEND_DESC bd = xblenddesc();
     
-    if (FAILED(ID3D11Device_CreateBlendState(xrend.dvc, &bd, &xrend.bls)))
+    if (FAILED(ID3D11Device_CreateBlendState(xrnd.d11Device, &bd, &xrnd.blendState)))
         exit(1);
     
-    D3D11_RASTERIZER_DESC rd = xrasterstate();
-    if (FAILED(ID3D11Device_CreateRasterizerState(xrend.dvc, &rd, &xrend.rs)))
+    D3D11_RASTERIZER_DESC rasterizerDesc = xrasterstate();
+    if (FAILED(ID3D11Device_CreateRasterizerState(xrnd.d11Device, &rasterizerDesc, 
+                                                  &xrnd.rasterizerState)))
         exit(1);
     
     D3D11_SAMPLER_DESC sd = xsamplerdesc();
-    if (FAILED(ID3D11Device_CreateSamplerState(xrend.dvc, &sd, &xrend.ss)))
+    if (FAILED(ID3D11Device_CreateSamplerState(xrnd.d11Device, &sd, &xrnd.samplerState)))
         exit(1);
     
     create_sprites_shaders();
@@ -1714,93 +1624,147 @@ void xrendinit(XRendConfig config)
     create_lines_vertex_buffer();
     
     D3D11_BUFFER_DESC vcbd = xcbufferdesc(sizeof(XVertexCBuffer));
-    if (FAILED(ID3D11Device_CreateBuffer(xrend.dvc, &vcbd, 0, &xrend.vcb)))
+    if (FAILED(ID3D11Device_CreateBuffer(xrnd.d11Device, &vcbd, 0, &xrnd.vertexCBuffer)))
         exit(1);
     
-    xrend.lg = Array_new(256, sizeof(XLineCommand));
+    xrnd.lineBatch = Array_new(256, sizeof(XLineCommand));
     
     LARGE_INTEGER lastCounter;
     QueryPerformanceCounter(&lastCounter);
     
-    xrend.run = true;
+    xrnd.running = true;
 }
 
-void xrendupdate(void)
+void xrender_update(void)
 {
     // Measure fps
     LARGE_INTEGER counter = xwallclock();
     
     // Calculate dt
-    xrend.dt = xseconds(xrend.lc, counter);
-    if (xrend.dt > 1000)
-        xrend.dt = 0;
+    xrnd.dt = xseconds(xrnd.lastCounter, counter);
+    if (xrnd.dt > 1000)
+        xrnd.dt = 0;
     
     // Save counter
-    xrend.lc = counter;
+    xrnd.lastCounter = counter;
     
     swap_chain_resize();
     
     u32 svc = produce_vertices_from_sprite_and_mesh_groups();
     u32 lvc = produce_vertices_from_line_group();
     
-    f32 scaleX = 2.0f / xrend.bbs.x;
-    f32 scaleY = (xrend.td ? -2.0f : 2.0f) / xrend.bbs.y;
+    f32 scaleX = 2.0f / xrnd.backBufferSize.x;
+    f32 scaleY = (xrnd.topDown ? -2.0f : 2.0f) / xrnd.backBufferSize.y;
     mat4f wvpMatrix =
     {
         scaleX, 0, 0, -1,
-        0, scaleY, 0, (xrend.td ? 1.f : -1.f),
+        0, scaleY, 0, (xrnd.topDown ? 1.f : -1.f),
         0, 0, .001f, 0,
         0, 0, 0, 1,
     };
     
-    xrend.vcbd.WVP = wvpMatrix;
-    ID3D11DeviceContext_UpdateSubresource(xrend.ctx, (ID3D11Resource*)xrend.vcb, 0, NULL, &xrend.vcbd, 0, 0);
+    xrnd.vertexCBufferData.WVP = wvpMatrix;
+    ID3D11DeviceContext_UpdateSubresource(xrnd.d11DeviceContext, 
+                                          (ID3D11Resource*)xrnd.vertexCBuffer, 0, NULL, 
+                                          &xrnd.vertexCBufferData, 0, 0);
     
-    ID3D11RenderTargetView* views[1] = { xrend.rtv };
-    ID3D11DeviceContext_OMSetRenderTargets(xrend.ctx, 1, views, xrend.dsv);
-    ID3D11DeviceContext_ClearRenderTargetView(xrend.ctx, xrend.rtv, xrend.cc.e);
-    ID3D11DeviceContext_ClearDepthStencilView(xrend.ctx, xrend.dsv, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
+    ID3D11RenderTargetView* views[1] = { xrnd.renderTargetView };
+    ID3D11DeviceContext_OMSetRenderTargets(xrnd.d11DeviceContext, 1, views, xrnd.depthStencilView);
+    ID3D11DeviceContext_ClearRenderTargetView(xrnd.d11DeviceContext, xrnd.renderTargetView, xrnd.clearColor.e);
+    ID3D11DeviceContext_ClearDepthStencilView(xrnd.d11DeviceContext, xrnd.depthStencilView, 
+                                              D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
     
     // Lines
-    render_pass(D3D11_PRIMITIVE_TOPOLOGY_LINELIST, xrend.lil, lvc, xrend.lvb, sizeof(XLineVertex3D), xrend.lvs, xrend.lps);
+    render_pass(D3D11_PRIMITIVE_TOPOLOGY_LINELIST, 
+                xrnd.lineInputLayout, lvc, 
+                xrnd.lineVertexBuffer, sizeof(XLineVertex3D), 
+                xrnd.lineVertexShader, xrnd.linePixelShader);
     // Sprites
-    render_pass(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, xrend.sil, svc, xrend.svb, sizeof(XVertex3D), xrend.svs, xrend.sps);
+    render_pass(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, 
+                xrnd.texturedInputLayout, svc, 
+                xrnd.texturedVertexBuffer, sizeof(XVertex3D), 
+                xrnd.texturedVertexShader, xrnd.texturedPixelShader);
     
-    IDXGISwapChain_Present(xrend.swc, 1, 0);
+    IDXGISwapChain_Present(xrnd.d11SwapChain, 1, 0);
 }
 
-void xrendfini(void)
+void xrender_shutdown(void)
 {
-    xfree(xrend.sa.bytes);
+    xfree(xrnd.textureAtlas.bytes);
     
     free_sprite_and_mesh_groups();
     free_line_group();
     
     xmemcheck();
     
-    if (xrend.asrv) ID3D11ShaderResourceView_Release(xrend.asrv);
-    if (xrend.vcb) ID3D11Buffer_Release(xrend.vcb);
-    if (xrend.lvb) ID3D11Buffer_Release(xrend.lvb);
-    if (xrend.svb) ID3D11Buffer_Release(xrend.svb);
-    if (xrend.lil) ID3D11InputLayout_Release(xrend.lil);
-    if (xrend.sil) ID3D11InputLayout_Release(xrend.sil);
-    if (xrend.lps) ID3D11PixelShader_Release(xrend.lps);
-    if (xrend.sps) ID3D11PixelShader_Release(xrend.sps);
-    if (xrend.lvs) ID3D11VertexShader_Release(xrend.lvs);
-    if (xrend.svs) ID3D11VertexShader_Release(xrend.svs);
-    if (xrend.ss) ID3D11SamplerState_Release(xrend.ss);
-    if (xrend.rs) ID3D11RasterizerState_Release(xrend.rs);
-    if (xrend.bls) ID3D11BlendState_Release(xrend.bls);
-    if (xrend.dss) ID3D11DepthStencilState_Release(xrend.dss);
-    if (xrend.dsv) ID3D11DepthStencilView_Release(xrend.dsv);
-    if (xrend.rtv) ID3D11RenderTargetView_Release(xrend.rtv);
-    if (xrend.sat) ID3D11Texture2D_Release(xrend.sat);
-    if (xrend.dsbt) ID3D11Texture2D_Release(xrend.dsbt);
-    if (xrend.bbt) ID3D11Texture2D_Release(xrend.bbt);
-    if (xrend.dbg) ID3D11Debug_Release(xrend.dbg);
-    if (xrend.swc) IDXGISwapChain_Release(xrend.swc);
-    if (xrend.ctx) ID3D11DeviceContext_Release(xrend.ctx);
-    if (xrend.dvc) ID3D11Device_Release(xrend.dvc);
+    if (xrnd.textureAtlasSRV) 
+        ID3D11ShaderResourceView_Release(xrnd.textureAtlasSRV);
+    
+    if (xrnd.vertexCBuffer) 
+        ID3D11Buffer_Release(xrnd.vertexCBuffer);
+    
+    if (xrnd.lineVertexBuffer) 
+        ID3D11Buffer_Release(xrnd.lineVertexBuffer);
+    
+    if (xrnd.texturedVertexBuffer) 
+        ID3D11Buffer_Release(xrnd.texturedVertexBuffer);
+    
+    if (xrnd.lineInputLayout) 
+        ID3D11InputLayout_Release(xrnd.lineInputLayout);
+    
+    if (xrnd.texturedInputLayout) 
+        ID3D11InputLayout_Release(xrnd.texturedInputLayout);
+    
+    if (xrnd.linePixelShader)
+        ID3D11PixelShader_Release(xrnd.linePixelShader);
+    
+    if (xrnd.texturedPixelShader) 
+        ID3D11PixelShader_Release(xrnd.texturedPixelShader);
+    
+    if (xrnd.lineVertexShader) 
+        ID3D11VertexShader_Release(xrnd.lineVertexShader);
+    
+    if (xrnd.texturedVertexShader)
+        ID3D11VertexShader_Release(xrnd.texturedVertexShader);
+    
+    if (xrnd.samplerState)
+        ID3D11SamplerState_Release(xrnd.samplerState);
+    
+    if (xrnd.rasterizerState) 
+        ID3D11RasterizerState_Release(xrnd.rasterizerState);
+    
+    if (xrnd.blendState) 
+        ID3D11BlendState_Release(xrnd.blendState);
+    
+    if (xrnd.depthStencilState)
+        ID3D11DepthStencilState_Release(xrnd.depthStencilState);
+    
+    if (xrnd.depthStencilView) 
+        ID3D11DepthStencilView_Release(xrnd.depthStencilView);
+    
+    if (xrnd.renderTargetView) 
+        ID3D11RenderTargetView_Release(xrnd.renderTargetView);
+    
+    if (xrnd.textureAtlasTexture2D) 
+        ID3D11Texture2D_Release(xrnd.textureAtlasTexture2D);
+    
+    if (xrnd.depthStencilBufferTexture2D) 
+        ID3D11Texture2D_Release(xrnd.depthStencilBufferTexture2D);
+    
+    if (xrnd.backBufferTexture2D) 
+        ID3D11Texture2D_Release(xrnd.backBufferTexture2D);
+    
+    if (xrnd.d11Debug) 
+        ID3D11Debug_Release(xrnd.d11Debug);
+    
+    if (xrnd.d11SwapChain) 
+        IDXGISwapChain_Release(xrnd.d11SwapChain);
+    
+    if (xrnd.d11DeviceContext) 
+        ID3D11DeviceContext_Release(xrnd.d11DeviceContext);
+    
+    if (xrnd.d11Device) 
+        ID3D11Device_Release(xrnd.d11Device);
 }
 
 #undef T

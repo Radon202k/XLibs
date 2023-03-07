@@ -25,22 +25,43 @@ typedef struct XFile* XFile;
 typedef struct
 {
     HCURSOR cursor;
-    HWND winhandle;
-} XWinConfig;
+    HWND windowHandle;
+} XWindowConfig;
 
-void xwininit(XWinConfig config);
+void xwindow_init  (XWindowConfig config);
+void xwindow_update(bool topdown, v2f windim);
 
-DXGI_RATIONAL dxgiratio(DWORD numerator, DWORD denominator);
-BITMAPINFO xbmpinfo(int width, int height);
+typedef struct
+{
+    s32 count;
+    D3D_FEATURE_LEVEL storage;
+} D3D11_FEATURE_LEVEL_ARRAY;
 
-void xcbcopy(wchar_t *text);
-s32 xcbpaste(wchar_t *text, int maxLength);
+D3D11_FEATURE_LEVEL_ARRAY       xd11_feature_leves(void);
+D3D11_RENDER_TARGET_BLEND_DESC  xd11_target_blend_desc(void);
+D3D11_BLEND_DESC                xd11_blend_desc(void);
+D3D11_RASTERIZER_DESC           xd11_raster_state(void);
+D3D11_BUFFER_DESC               xd11_cbuffer_desc(s32 size);
+D3D11_SAMPLER_DESC              xd11_sampler_desc(void);
+D3D11_DEPTH_STENCIL_DESC        xd11_depth_stencil_desc(void);
+D3D11_DEPTH_STENCIL_VIEW_DESC   xd11_depth_stencil_view_desc(DXGI_FORMAT format, D3D11_DSV_DIMENSION dim);
+D3D11_SHADER_RESOURCE_VIEW_DESC xd11_shader_res_view_desc(DXGI_FORMAT format, D3D11_SRV_DIMENSION dim);
+WNDCLASSEXW xwndclass(WNDPROC userwndproc);
 
-void xpath(wchar_t *path, u32 size);
-void xpathascii(char *path, u32 size);
+inline LARGE_INTEGER xwallclock(void);
+inline f32           xseconds(LARGE_INTEGER start, LARGE_INTEGER end);
 
-XFile xfileread(wchar_t *filePath);
-bool xfilewrite(wchar_t *filePath, wchar_t *data, u32 size);
+bool                 xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta);
+
+void  xclipboard_copy (wchar_t *text);
+s32   xclipboard_paste(wchar_t *text, int maxLength);
+
+void  xpath      (wchar_t *path, u32 size);
+void  xpath_ascii(char    *path, u32 size);
+
+XFile xfile_read (wchar_t *path);
+bool  xfile_write(wchar_t *path, wchar_t *data, u32 size);
+
 
 typedef struct
 {
@@ -88,15 +109,60 @@ typedef struct
 
 global XWindows xwin;
 
-void xwininit(XWinConfig config)
+void xwindow_init(XWindowConfig config)
 {
-    xwin.wh = config.winhandle;
+    xwin.wh = config.windowHandle;
     xwin.ch = config.cursor;
     
     LARGE_INTEGER pf;
     QueryPerformanceFrequency(&pf);
     xwin.pf = pf.QuadPart;
 }
+
+void xwindow_update(bool topdown, v2f windim)
+{
+    // Get mouse position
+    POINT mousePoint;
+    if (GetCursorPos(&mousePoint))
+    {
+        if (ScreenToClient(xwin.wh, &mousePoint))
+        {
+            xwin.mouse.pos.x = (f32)mousePoint.x;
+            xwin.mouse.pos.y = (topdown ? mousePoint.y : windim.y - (f32)mousePoint.y);
+        }
+    }
+    
+    // Mouse dragging
+    if (xwin.mouse.left.down && !xwin.mouse.dragging)
+    {
+        xwin.mouse.dragging = true;
+    }
+    
+    if (xwin.mouse.dragging && !xwin.mouse.left.down)
+    {
+        xwin.mouse.dragging = false;
+    }
+    
+    // Clear keyboard pressed state from last frame
+    for (u32 i = 0; i < narray(xwin.key.all); ++i)
+    {
+        xwin.key.all[i].pressed = false;
+    }
+    
+    // Clear mouse pressed state
+    xwin.mouse.left.pressed = false;
+    xwin.mouse.right.pressed = false;
+    
+    xwin.mouse.left.released = false;
+    xwin.mouse.right.released = false;
+    
+    xwin.mouse.wheel = 0;
+    
+    // Clear the input char
+    xwin.ic = 0;
+    xwin.ice = false;
+}
+
 
 #define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, HINSTANCE instprev, PSTR cmdline, int cmdshow)
 
@@ -106,7 +172,7 @@ SetCursor(xwin.ch);  \
 } break;                \
 case WM_DESTROY:        \
 case WM_CLOSE: {        \
-xrend.run = false;    \
+xrnd.running = false;    \
 } break;                \
 case WM_CHAR: {                 \
 xwin.ic = (wchar_t)wParam;   \
@@ -198,50 +264,6 @@ inline f32 xseconds(LARGE_INTEGER start, LARGE_INTEGER end)
 {
     f32 r = ((f32)(end.QuadPart - start.QuadPart) / (f32)xwin.pf);
     return r;
-}
-
-void xwinupdate(bool topdown, v2f windim)
-{
-    // Get mouse position
-    POINT mousePoint;
-    if (GetCursorPos(&mousePoint))
-    {
-        if (ScreenToClient(xwin.wh, &mousePoint))
-        {
-            xwin.mouse.pos.x = (f32)mousePoint.x;
-            xwin.mouse.pos.y = (topdown ? mousePoint.y : windim.y - (f32)mousePoint.y);
-        }
-    }
-    
-    // Mouse dragging
-    if (xwin.mouse.left.down && !xwin.mouse.dragging)
-    {
-        xwin.mouse.dragging = true;
-    }
-    
-    if (xwin.mouse.dragging && !xwin.mouse.left.down)
-    {
-        xwin.mouse.dragging = false;
-    }
-    
-    // Clear keyboard pressed state from last frame
-    for (u32 i = 0; i < narray(xwin.key.all); ++i)
-    {
-        xwin.key.all[i].pressed = false;
-    }
-    
-    // Clear mouse pressed state
-    xwin.mouse.left.pressed = false;
-    xwin.mouse.right.pressed = false;
-    
-    xwin.mouse.left.released = false;
-    xwin.mouse.right.released = false;
-    
-    xwin.mouse.wheel = 0;
-    
-    // Clear the input char
-    xwin.ic = 0;
-    xwin.ice = false;
 }
 
 bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
@@ -345,7 +367,6 @@ D3D11_RASTERIZER_DESC xrasterstate()
     return r;
 }
 
-
 D3D11_SAMPLER_DESC xsamplerdesc()
 {
     D3D11_SAMPLER_DESC r =
@@ -360,7 +381,6 @@ D3D11_SAMPLER_DESC xsamplerdesc()
     };
     return r;
 }
-
 
 DXGI_RATIONAL xrational(DWORD n, DWORD d)
 {
@@ -399,8 +419,9 @@ D3D11_DEPTH_STENCIL_DESC xdepthstencildesc()
     return r;
 }
 
-
-D3D11_DEPTH_STENCIL_VIEW_DESC xdsviewdesc(DXGI_FORMAT format, D3D11_DSV_DIMENSION dim) {
+D3D11_DEPTH_STENCIL_VIEW_DESC xdsviewdesc(DXGI_FORMAT format, 
+                                          D3D11_DSV_DIMENSION dim)
+{
     D3D11_TEX2D_DSV t = {
         0
     };
@@ -489,7 +510,6 @@ void xpathascii(char *path, u32 size)
 {
     GetModuleFileNameA(NULL, path, size);
 }
-
 
 XFile xfileread(wchar_t *path)
 {

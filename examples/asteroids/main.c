@@ -19,7 +19,7 @@ XWINMAIN()
     engine_init();
     game_init();
     
-    while (xrend.run)
+    while (xrnd.running)
     {
         MSG message;
         while (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
@@ -30,9 +30,13 @@ XWINMAIN()
         
         game_update_and_render();
         
-        xsound_post_update();           // Update XSound
-        xwinupdate(xrend.td, xrend.wd); // Update XWindows
-        xrendupdate();                  // Update XRender
+        xsprite(engine.layer1, engine.noiseTest, 
+                (v2f){0,0}, xrnd.backBufferSize, (v4f){1,1,1,1},
+                (v2f){0,0}, 0, -10); 
+        
+        xsound_post_update();                      // Update XSound
+        xwinupdate(xrnd.topDown, xrnd.windowSize); // Update XWindows
+        xrender_update();                          // Update XRender
         
         xsound.flipWallClock = xwallclock();
         

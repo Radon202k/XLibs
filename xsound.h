@@ -44,7 +44,7 @@ bool   xsoundinit    (HWND window);      // Inits xaudio2
 void   xsoundfini    (void);             // Free loaded wav files, free xaudio2
 
 XSound xloadwav (wchar_t *path);        // Loads a wave, creates source voice
-void   xplay    (Sound a, float volume); // Plays a sound
+void   xplay    (XSound a, float volume); // Plays a sound
 
 
 
@@ -64,7 +64,7 @@ void xsound_output(XSoundOutputBuffer outputBuf)
         *out++ = value;
         
         assert(value < 3000);
-
+        
         xsound.tsine += 2.0f * PIf * 1.0f / (f32)period;
         if (xsound.tsine > 2.0f * PIf)
             xsound.tsine -= 2.0f * PIf;
@@ -174,7 +174,7 @@ bool xsoundinit(HWND window)
         xsound.bytes,
     };
     
-//    xsound_output(soundOutputBuffer);
+    //    xsound_output(soundOutputBuffer);
     
     IDirectSoundBuffer_Play(xsound.buffer, 0, 0, DSBPLAY_LOOPING);
     
@@ -241,7 +241,7 @@ XSound xloadwav(wchar_t* path)
     return r;
 }
 
-void xplay(Sound a, float volume)
+void xplay(XSound a, float volume)
 {
 }
 
@@ -294,7 +294,7 @@ void xsound_post_update()
             xsound.pci = 0;
         if (xsound.wci >= narray(xsound.wcs))
             xsound.wci = 0;
-
+        
         if(!xsound.soundIsValid)
         {
             xsound.runSampIndex = wc / xsound.bytesPerSamp;
@@ -348,7 +348,7 @@ void xsound_post_update()
             xsound_output(soundOutputBuffer);
             xsound.pc = pc;
             xsound.wc = wc;
-
+            
             fill_sound_buffer(byteToLock, bytesToWrite, &soundOutputBuffer);
         }
     }
@@ -357,6 +357,5 @@ void xsound_post_update()
         xsound.soundIsValid = false;
     }
 }
-
 
 #endif

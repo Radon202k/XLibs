@@ -87,7 +87,8 @@ typedef struct
     v2f *vertices;
 } ConvexPolygonf;
 
-bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection) {
+bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection)
+{
     v2f r = { p2.x - p1.x, p2.y - p1.y };
     v2f s = { q2.x - q1.x, q2.y - q1.y };
     float rxs = r.x * s.y - r.y * s.x;
@@ -103,22 +104,22 @@ bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection) {
     }
 }
 
-inline bool circlef_vs_circlef(Circlef A, Circlef B)
+bool circlef_vs_circlef(Circlef A, Circlef B)
 {
     f32 distsq = lsq2f(sub2f(B.center, A.center));
     
     f32 radii = A.radius + B.radius;
     f32 radiisq = radii * radii;
-
+    
     return (distsq < radiisq);
 }
 
-inline f32 circlef_vs_circlef_dist(Circlef A, Circlef B)
+f32 circlef_vs_circlef_dist(Circlef A, Circlef B)
 {
     return maxf(A.radius + B.radius - len2f(sub2f(A.center, B.center)), 0);
 }
 
-inline void circlef_vs_circlef_witness(Circlef A, Circlef B, v2f *p1, v2f *p2)
+void circlef_vs_circlef_witness(Circlef A, Circlef B, v2f *p1, v2f *p2)
 {
     v2f v = nrm2f(sub2f(A.center, B.center));
     *p1 = sub2f(A.center, mul2f(A.radius, v));
@@ -569,6 +570,7 @@ void psub2f(v2f* d, v2f v)
 
 inline v2f nrm2f(v2f a)
 {
+    assert(len2f(a) != 0);
     return mul2f(1.0f/len2f(a), a);
 }
 

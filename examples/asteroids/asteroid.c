@@ -20,8 +20,8 @@ void asteroid_generate_mesh(Array_T *mesh, int corners)
     
     v2f p[256];
     for (s32 i=0; i<corners; ++i)
-        p[i] = ini2f(sinf(radf(i*360.0f/corners)) + rndf(-.3f,.3f), 
-                     cosf(radf(i*360.0f/corners)) + rndf(-.3f,.3f));
+        p[i] = ini2f(sinf(radf(i*360.0f/corners)) + rndf(-.1f,.1f), 
+                     cosf(radf(i*360.0f/corners)) + rndf(-.1f,.1f));
     
     for (s32 i=0; i<corners-2; ++i)
     {
@@ -37,6 +37,12 @@ void asteroid_generate_mesh(Array_T *mesh, int corners)
     }
 }
 
+Circlef asteroid_hitbox(Asteroid *a)
+{
+    Circlef hitbox = {a->pos, a->scale.x-10};
+    return hitbox;
+}
+
 void asteroids_draw(void)
 {
     // Draw asteroids
@@ -45,11 +51,26 @@ void asteroids_draw(void)
         Asteroid *a = Array_get(gs.asteroids, i);
         
         xmesh(engine.meshlayer1, a->mesh, a->pos, a->scale, 
-              ini4f(1,1,1,.3f), ini2f(.5f,.5f), 0, 0);
+              ini4f(1,1,1,1), ini2f(.5f,.5f), 0, 0);
         
+#if 0
         xlinemesh(a->mesh, a->pos, a->scale, gol4f, 10);
         
-        Circlef hitbox = {a->pos, a->scale.x+10};
+        Circlef hitbox = asteroid_hitbox(a);
         xlinecircle(hitbox.center, hitbox.radius, 20, eme4f, 20);
+#endif
+        
+#if 0
+        // X pos
+        wchar_t *s = xstrfromint((s32)a->pos.x);
+        xstring(engine.layer1, engine.font, s, a->pos, gol4f, ini2f(0,0), 0, 10, true);
+        xfree(s);
+        
+        // Y pos
+        s = xstrfromint((s32)a->pos.y);
+        xstring(engine.layer1, engine.font, s, 
+                add2f(a->pos, ini2f(50,0)), gol4f, ini2f(0,0), 0, 10, true);
+        xfree(s);
+#endif
     }
 }
