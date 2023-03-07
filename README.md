@@ -92,14 +92,14 @@ v2f xrender_monitor_size (void);
 
 ### Texture / Texture atlas / Sprites ###
 
-	A Render Batch is composed of many vertices representing triangles texture
-mapped to a single gpu texture that is called the texture atlas. A Sprite is a
-smaller rectangle than the whole texture atlas that represents a texture in it
-self, i.e., the texture atlas is composed of many different smaller textures.
-	The point of that is faster performance. xspritepng creates a sprite from a
-png file located at path, i.e., it loads the png and copies the bytes of the
-texture into the texture atlas and fills XSprite with the corresponding uv coo
-rdinates and other info about the source image.
+| :warning: A Render Batch is composed of many vertices representing triangles texture |
+| mapped to a single gpu texture that is called the texture atlas. A Sprite is a |
+| smaller rectangle than the whole texture atlas that represents a texture in it |
+| self, i.e., the texture atlas is composed of many different smaller textures. |
+| The point of that is faster performance. xspritepng creates a sprite from a |
+| png file located at path, i.e., it loads the png and copies the bytes of the |
+| texture into the texture atlas and fills XSprite with the corresponding uv coordinates |
+| and other info about the source image. |
 
 ```c
 XSprite  xspritepng   (wchar_t *path, bool premulalpha);
