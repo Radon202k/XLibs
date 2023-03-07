@@ -28,36 +28,17 @@ popd
 
 #include "w:/libs/xlibs/xrender.h"
 
-global XFont font;
-global XSprite white;
-global Stack_T *batch;
-
 LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 XWINMAIN()
 {
-    XRendConfig rendconfig = {
-        window_proc, WS_OVERLAPPEDWINDOW | WS_VISIBLE, 0,
-        L"My window", eme4f, ini2f(0,0), ini2f(400,400),
-        true, 1024, 10000, 4096, 256,
-    };
-    xrendinit(rendconfig); // Init XRender
+    xrender_init((XRenderConfig){window_proc, .topDown=true});
+    xwindow_init((XWindowConfig){LoadCursor(NULL, IDC_ARROW), xrnd.windowHandle});
     
-    XWinConfig winconfig = {
-        LoadCursor(NULL, IDC_ARROW),
-        xrend.wh, xrend.wd, xrend.td,
-    };
-    xwininit(winconfig);   // Init XWindows
+    /* Create resources */
     
-    // Load resources
-    font = xfont(L"fonts/inconsolata.ttf", L"Inconsolata", 32);
-    white = xspritepng(L"images/white.png", false);
-    batch = xbatch(4096);
-    
-    // Main loop
-    while (xrend.run)
+    while (xrnd.running)
     {
-        // Handle Windows messages
         MSG message;
         while (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
         {
@@ -65,40 +46,22 @@ XWINMAIN()
             DispatchMessageW(&message);
         }
         
-        // Beginning of frame
+        /* Do stuff */
         
-        // Do stuff ...
-        
-        xline(ini2f(0,0), xwin.mouse.pos, cob4f, 0);
-        
-        // Do stuff ...
-        
-        // End of frame
-        
-        xwinupdate();  // Update XWindows
-        xrendupdate(); // Update XRender
+        xrender_update();
+        xwindow_update(xrnd.topDown, xrnd.windowSize);
     }
     
-    xfontfree(font); // Free XFont
-    xrendfini();     // Free XRender resources
-}
-
-void xrendresized(void)
-{
+    /* Free resources */
+    
+    xrender_shutdown();
 }
 
 LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 {
     LRESULT result = 0;
     switch (message) {
-    	/* XWNDPROC macro handles the following messages: WM_SETCURSOR, WM_DESTROY, WM_CLOSE
-    	   WM_CHAR, WM_MOUSEWHEEL, WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP, WM_LBUTTONDOWN
-    	   WM_RBUTTONDOWN, WM_LBUTTONUP, WM_RBUTTONUP. Which means you can't redefine them. If you
-    	   need to, look in xwindows.h to see the definition of XWNDPROC so you can copypaste that
-    	   and handle the messages yourself.  */
         XWNDPROC;
-
-        // Handle other messages
         
         default:
         {
@@ -108,73 +71,74 @@ LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
     return result;
 }
 
+void xrender_resized(void)
+{
+}
 ```
 
-## API Reference ##
+# API Reference #
 
-### Main ###
-```c
-void xinitialize (void);
-void xshutdown   (void);
-void xconfig     (void);
-void xupdate     (void);
-void xresized    (void);
-```
-### Config ###
-```c
-void xwindow   (s32 x, s32 y, s32 w, s32 h, wchar_t *title);
-void xwinstyle (u32 style, u32 exstyle);
-void xtopdown  (bool topdown);
-void xclear    (v4f color);
-v2f  xmonitor  (void);
-```
-### Rendering ###
-```c
-Stack_T* xbatch       (void);
-u8*      xatlasbytes  (void);
-XSprite  xspritebytes (u8* bytes, s32  width, s32 height);
-XSprite  xspritepng   (wchar_t* path, bool premul);
-XFont    xfont        (wchar_t* path, wchar_t *name, s32 height);
-XSprite  xglyphsprite (XFont font, wchar_t *c, rect2f *tightbounds, s32 *tightdescent);
-s32      xfontheight  (s32 pointheight);
-void     xfontfree    (XFont font);
-v2f      xspritesize  (XSprite sprite);
-void     xatlasupdate (u8* data);
-v2f      xstringsize  (XFont font, wchar_t* str);
-v2f      xglyphsize   (XFont font, u32 unicode);
-```
-### Drawing ###
-```c
-void xline     (v2f a, v2f b, v4f color, f32 sort);
-void xlinerect (v2f pos, v2f dim, v4f color, f32 sort);
-void xrect     (Stack_T* batch, XSprite sprite, v2f pos, v2f dim, v4f color, f32 sort);
-void xsprite   (Stack_T* batch, XSprite sprite, v2f pos, v2f dim, v4f color, f32 sort);
-f32  xglyph    (Stack_T* batch, XFont font, u32 unicode, v2f pos, v4f color, f32 sort);
-f32  xstring   (Stack_T* batch, XFont font, wchar_t *s, v2f pos, v4f color, f32 sort, bool fixedWidth);
-```
-### File IO ###
-```c
-XFile xfileread  (wchar_t *path);
-bool  xfilewrite (wchar_t *path, wchar_t *data, u32 size);
-u8*   xpng       (wchar_t *path, u32 *width, u32 *height, bool premul);
-```
-### GUI ###
-```c
-bool xdraggedhandle (v2 p, f32 maxDist, void *address, bool *hover, v2 *delta);
-```
-### Other ###
-```c
-void xcbcopy  (wchar_t *text);
-s32  xcbpaste (wchar_t *text, int maxLength);
-void xpath    (wchar_t *path, u32 size);
-void xpathabs (wchar_t *dest, u32 destSize, wchar_t *fileName);
+## XRender ##
 
-void xpathascii    (char *path, u32 size);
-void xpathabsascii (char *dest, u32 destSize, char *fileName);
+### Main functions ###
+```c
+void xrender_initialize  (void);
+void xrender_shutdown    (void);
+void xrender_update      (void);
+void xrender_resized     (void);
+
+v2f xrender_monitor_size (void);
 ```
+
+### Texture / Texture atlas / Sprites ###
+
+	A Render Batch is composed of many vertices representing triangles texture
+mapped to a single gpu texture that is called the texture atlas. A Sprite is a
+smaller rectangle than the whole texture atlas that represents a texture in it
+self, i.e., the texture atlas is composed of many different smaller textures.
+	The point of that is faster performance. xspritepng creates a sprite from a
+png file located at path, i.e., it loads the png and copies the bytes of the
+texture into the texture atlas and fills XSprite with the corresponding uv coo
+rdinates and other info about the source image.
+
+```c
+XSprite  xspritepng   (wchar_t *path, bool premulalpha);
+u8      *xpng         (wchar_t *filePath, v2i *dim, bool premulAlpha);
+XSprite  xspritebytes (u8 *bytes, v2i dim);
+Array_T *xbatch       (s32 size);
+Array_T *xmeshbatch   (s32 sz);
+u8      *xatlasbytes  (void);
+void     xatlasupdate (u8 *data);
+```
+### Fonts / Glyphs ###
+```c
+XFont   xfont        (wchar_t *fileName, wchar_t *fontName, int heightPoints);
+void    xfontfree    (XFont font);
+s32     xfontheight  (s32 pointHeight);
+XSprite xglyphsprite (XFont font, wchar_t *c, rect2f *tightBounds, s32 *tightDescent);
+```
+
+### Drawing / Rendering utilities ###
+```c
+void xline   (v2f a, v2f b, v4f color, f32 sort);
+void xarrow  (Array_T *batch, v2f a, v2f b, v4f col, XSprite head, v2f size, f32 sort);
+void xsprite (Array_T *batch, XSprite s, v2f pos, v2f dim, v4f col, v2f pivot, f32 rot, f32 sort);
+f32  xglyph  (Array_T *batch, XFont f, u32 unicode, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort);
+f32  xstring (Array_T *batch, XFont f, wchar_t *string, v2f pos, v4f c, v2f pivot, f32 rot, f32 sort, bool fixedwidth);
+void xmesh   (Array_T *batch, Array_T vertices, v2f pos, v2f scale, v4f color, v2f pivot, f32 rot, f32 sort);
+
+void xlinerect   (v2f pos, v2f dim, v4f col, f32 sort);
+void xlinecircle (v2f pos, f32 radius, s32 n, v4f col, f32 sort);
+void xlinemesh   (Array_T vertices, v2f pos, v2f scale, v4f col, f32 sort);
+
+v2f  xglyphsize  (XFont font, u32 unicode);
+v2f  xstringsize (XFont font, wchar_t *s);
+```
+
+NOTE: From here on it is ALL OLD **NEED UPDATE**
+TODO: Update from here on
 
 ## Drawing strokes example ##
-TODO: Update code (old not working)
 ```c
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
