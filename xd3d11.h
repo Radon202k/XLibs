@@ -1,5 +1,5 @@
-#ifndef XLIB_DIRECT3D11
-#define XLIB_DIRECT3D11
+#ifndef XLIB_D3D11
+#define XLIB_D3D11
 
 /* =========================================================================
    DEPENDENCIES
@@ -74,8 +74,10 @@ struct XD11Batch
     ID3D11VertexShader *vertexShader;
     ID3D11PixelShader *pixelShader;
     ID3D11InputLayout *inputLayout;
+    
     u32 viewportCount;
     D3D11_VIEWPORT *viewports;
+    
     u32 scissorCount;
     D3D11_RECT *scissors;
 };
@@ -246,6 +248,30 @@ XD11 xd11;
 
 #define RGBA(r,g,b,a) (((a)<<24) | ((r)<<16) | ((g)<<8) | (b))
 
+void xd11_set_render_target(ID3D11RenderTargetView *view,
+                            ID3D11DepthStencilView *depthStencil)
+{
+    ID3D11RenderTargetView *views[1] = 
+    {
+        view
+    };
+    
+    ID3D11DeviceContext_OMSetRenderTargets(xd11.deviceContext,
+                                           1,
+                                           views,
+                                           depthStencil);
+}
+
+void xd11_set_render_targets(u32 count, 
+                             ID3D11RenderTargetView **views,
+                             ID3D11DepthStencilView *depthStencil)
+{
+    ID3D11DeviceContext_OMSetRenderTargets(xd11.deviceContext,
+                                           count,
+                                           views,
+                                           depthStencil);
+}
+
 void xd11_update_subresource(void *resource, void *data)
 {
     ID3D11DeviceContext_UpdateSubresource(xd11.deviceContext, 
@@ -373,7 +399,7 @@ u8 *xd11_load_png(wchar_t *path, v2i *dim, bool premulalpha)
     xfree(asciiPath);
 	if (data)
     {
-        *dim = ini2i(w,h);
+        *dim = (v2i){w,h};
         
 		dataSize = w*h*nrChannels;
 		r = (u8 *)xalloc(dataSize);
@@ -407,7 +433,7 @@ u8 *xd11_load_png(wchar_t *path, v2i *dim, bool premulalpha)
         stbi_image_free(data);
 	}
 	else
-        *dim = ini2i(0,0);
+        *dim = (v2i){0,0};
     
 	return r;
 }
@@ -445,7 +471,7 @@ XD11Sprite xd11_sprite_from_bytes(XD11TextureAtlas *a, u8 *b, v2i dim)
     m = 1;
     
     if ((a->at.x + dim.x + m) > a->size)
-        a->at = ini2i(0, a->bottom);
+        a->at = (v2i){0, a->bottom};
     
     if (m+a->bottom < (a->at.y + dim.y))
         a->bottom = a->at.y + dim.y + m;
@@ -459,8 +485,8 @@ XD11Sprite xd11_sprite_from_bytes(XD11TextureAtlas *a, u8 *b, v2i dim)
     r.uv.min = (v2f){a->at.x / (f32)a->size,
         ( (a->at.y + dim.y) ) / (f32)a->size};
     
-    r.uv.max = ini2f((a->at.x + dim.x) / (f32)a->size, 
-                     ( a->at.y ) / (f32)a->size);
+    r.uv.max = (v2f){(a->at.x + dim.x) / (f32)a->size, 
+        ( a->at.y ) / (f32)a->size};
     
     r.size = ini2fs(dim.x,dim.y);
     
@@ -584,8 +610,8 @@ XD11Font xd11_font(XD11TextureAtlas *atlas, wchar_t *path, wchar_t *name, int he
         if (tightBounds.max.x!=0 && tightBounds.max.y!=0)
         {
             /* Calculate tight size */
-            v2i tightSize = ini2i((s32)(tightBounds.max.x - tightBounds.min.x),
-                                  (s32)(tightBounds.max.y - tightBounds.min.y));
+            v2i tightSize = (v2i){(s32)(tightBounds.max.x - tightBounds.min.x),
+                (s32)(tightBounds.max.y - tightBounds.min.y)};
             
             /* Book keep maximum glyph size and maximum descent */
             if (maxGlyphSize.x < tightSize.x) maxGlyphSize.x = tightSize.x;
@@ -617,8 +643,8 @@ XD11Sprite xd11_glyph_from_char(XD11TextureAtlas *atlas, XD11Font font, wchar_t 
     
     ps=(s32)(0.3f*font.lineadvance);
     GetTextExtentPoint32W(xd11.glyphMakerDC, c, 1, &size);
-    al=ini2f(0,0);
-    d=ini2fs(size.cx,size.cy);
+    al = (v2f){0,0};
+    d = ini2fs(size.cx,size.cy);
     charsz=(s32)wcslen(c);
     bounds = inir2f(0,0, d.x,d.y);
     tBounds->min.x=tBounds->min.y=1000000;
@@ -809,12 +835,19 @@ void xd11_buffer_update(ID3D11Buffer *buffer, void *data, u32 size)
     ID3D11DeviceContext_Unmap(xd11.deviceContext, (ID3D11Resource *)buffer, 0);
 }
 
-void xd11_batch_clear(ID3D11RenderTargetView *d11TargetView, 
-                      ID3D11DepthStencilView *depthStencilView, v4f clearColor)
+void xd11_clear_rtv(ID3D11RenderTargetView *renderTargetView, v4f clearColor)
 {
-    ID3D11DeviceContext_ClearRenderTargetView(xd11.deviceContext, d11TargetView, clearColor.e);
-    ID3D11DeviceContext_ClearDepthStencilView(xd11.deviceContext, depthStencilView, 
-                                              D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
+    ID3D11DeviceContext_ClearRenderTargetView(xd11.deviceContext, 
+                                              renderTargetView, 
+                                              clearColor.e);
+}
+
+void xd11_clear_dsv(ID3D11DepthStencilView *depthStencilView, u32 flags,
+                    UINT8 min, UINT8 max)
+{
+    ID3D11DeviceContext_ClearDepthStencilView(xd11.deviceContext, 
+                                              depthStencilView, 
+                                              flags, min, max);
 }
 
 void xd11_batch_draw(XD11Batch *batch, u32 vertexCount)
@@ -892,10 +925,10 @@ void xd11_initialize(XD11Config config)
     
     /* Window pos and size */
     xd11.windowPos  = (config.windowPos.x==0 && config.windowPos.y==0) ? 
-        xd11.windowPos = ini2f(0,0) : config.windowPos;
+        xd11.windowPos = (v2f){0,0} : config.windowPos;
     
     xd11.windowSize = (config.windowSize.x==0 && config.windowSize.y==0) ? 
-        xd11.windowSize = ini2f(800,600) : config.windowSize;
+        xd11.windowSize = (v2f){800,600} : config.windowSize;
     
     xd11.backBufferSize = xd11.windowSize;
     
@@ -906,7 +939,7 @@ void xd11_initialize(XD11Config config)
     };
     
     AdjustWindowRect(&size, WS_OVERLAPPEDWINDOW, FALSE);
-    xd11.windowSize = ini2f((f32)(size.right - size.left), (f32)(size.bottom - size.top));
+    xd11.windowSize = (v2f){(f32)(size.right - size.left), (f32)(size.bottom - size.top)};
     
     /* Window title */
     xstrcpy(xd11.windowTitle, 256, (config.windowTitle == 0) ? 

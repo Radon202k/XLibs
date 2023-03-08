@@ -58,7 +58,7 @@ union v2f
 
 v2f  bez2f (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v2f  lrp2f (v2f a, f32 t, v2f b);
-v2f  ini2f (f32 x, f32 y);
+v2f  fil2f (f32 x);
 v2f  ini2fs(s32 x, s32 y);
 v2f *new2f (f32 x, f32 y);
 v2f  add2f (v2f a, v2f b);
@@ -164,7 +164,7 @@ union v2i
 
 v2i  bez2i (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v2i  lrp2i (v2i a, f32 t, v2i b);
-v2i  ini2i (s32 x, s32 y);
+v2i  fil2i (s32 x);
 v2i  ini2if(f32 x, f32 y);
 v2i *new2i (s32 x, s32 y);
 v2i  add2i (v2i a, v2i b);
@@ -463,9 +463,9 @@ inline f32 degf(f32 rad)
    VECTOR 2 FLOAT
    ========================================================================= */
 
-inline v2f ini2f(f32 x, f32 y)
+inline v2f fil2f(f32 v)
 {
-    v2f r = {x, y};
+    v2f r = {v, v};
     return r;
 }
 
@@ -478,16 +478,16 @@ inline v2f ini2fs(s32 x, s32 y)
 inline v2f *new2f(f32 x, f32 y)
 {
     v2f *r = (v2f *)xalloc(sizeof *r);
-    *r = ini2f(x,y);
+    *r = (v2f){x,y};
     return r;
 }
 
 inline v2f bez2f(f32 x1, f32 y1, f32 x2, f32 y2, f32 t)
 {
-    v2f p0 = ini2f(0,0);
-    v2f p1 = ini2f(x1,y1);
-    v2f p2 = ini2f(x2,y2);
-    v2f p3 = ini2f(1,1);
+    v2f p0 = {0,0};
+    v2f p1 = {x1,y1};
+    v2f p2 = {x2,y2};
+    v2f p3 = {1,1};
     
     f32 u = 1.0f - t;
     f32 tt = t * t;
@@ -610,9 +610,9 @@ inline v2f rot2f(v2f v, f32 a)
    VECTOR 2 INT
    ========================================================================= */
 
-inline v2i ini2i(s32 x, s32 y)
+inline v2i fil2i(s32 v)
 {
-    v2i r = {x, y};
+    v2i r = {v, v};
     return r;
 }
 
