@@ -20,48 +20,15 @@
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxguid.lib")
 
-typedef struct XFile* XFile;
+/* ============================================================================
+DATA TYPES
+ ========================================================================== */
 
 typedef struct
 {
     HCURSOR cursor;
     HWND windowHandle;
 } XWindowConfig;
-
-void xwindow_init  (XWindowConfig config);
-void xwindow_update(bool topdown, v2f windim);
-
-typedef struct
-{
-    s32 count;
-    D3D_FEATURE_LEVEL storage;
-} D3D11_FEATURE_LEVEL_ARRAY;
-
-D3D11_FEATURE_LEVEL_ARRAY       xd11_feature_leves(void);
-D3D11_RENDER_TARGET_BLEND_DESC  xd11_target_blend_desc(void);
-D3D11_BLEND_DESC                xd11_blend_desc(void);
-D3D11_RASTERIZER_DESC           xd11_raster_state(void);
-D3D11_BUFFER_DESC               xd11_cbuffer_desc(s32 size);
-D3D11_SAMPLER_DESC              xd11_sampler_desc(void);
-D3D11_DEPTH_STENCIL_DESC        xd11_depth_stencil_desc(void);
-D3D11_DEPTH_STENCIL_VIEW_DESC   xd11_depth_stencil_view_desc(DXGI_FORMAT format, D3D11_DSV_DIMENSION dim);
-D3D11_SHADER_RESOURCE_VIEW_DESC xd11_shader_res_view_desc(DXGI_FORMAT format, D3D11_SRV_DIMENSION dim);
-WNDCLASSEXW xwndclass(WNDPROC userwndproc);
-
-inline LARGE_INTEGER xwallclock(void);
-inline f32           xseconds(LARGE_INTEGER start, LARGE_INTEGER end);
-
-bool                 xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta);
-
-void  xclipboard_copy (wchar_t *text);
-s32   xclipboard_paste(wchar_t *text, int maxLength);
-
-void  xpath      (wchar_t *path, u32 size);
-void  xpath_ascii(char    *path, u32 size);
-
-XFile xfile_read (wchar_t *path);
-bool  xfile_write(wchar_t *path, wchar_t *data, u32 size);
-
 
 typedef struct
 {
@@ -87,13 +54,13 @@ typedef struct
     XKey   left, right;
 } XMouse;
 
-/*
-
-    ic  : input char
-    ice : input char entered
-
-
-*/
+typedef struct
+{
+    wchar_t name[512];
+    bool exists;
+    u32 size;
+    u8 *bytes;
+} XFile;
 
 typedef struct
 {
@@ -109,7 +76,43 @@ typedef struct
 
 global XWindows xwin;
 
-void xwindow_init(XWindowConfig config)
+/* ============================================================================
+INTERFACE
+ ========================================================================== */
+
+void xwin_initialize (XWindowConfig config);
+void xwin_update (bool topdown, v2f windim);
+
+inline LARGE_INTEGER xwin_time(void);
+inline f32 xwin_seconds(LARGE_INTEGER start, LARGE_INTEGER end);
+
+bool xwin_dragged(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta);
+
+WNDCLASSEXW xwin_wndclass(WNDPROC userwndproc);
+
+void  xwin_clipboard_copy(wchar_t *text);
+s32   xwin_clipboard_paste(wchar_t *text, int maxLength);
+void  xwin_path(wchar_t *path, u32 size);
+void  xwin_pathascii(char *path, u32 size);
+XFile xwin_file_read(wchar_t *path);
+bool  xwin_file_write(wchar_t *path, wchar_t *data, u32 size);
+void  xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename);
+void  xwin_path_abs_ascii(char *dst, u32 dstsize, char *filename);
+
+
+
+
+
+
+
+
+
+
+/* ============================================================================
+IMPLEMENTATION
+ ========================================================================== */
+
+void xwin_initialize(XWindowConfig config)
 {
     xwin.wh = config.windowHandle;
     xwin.ch = config.cursor;
@@ -119,7 +122,7 @@ void xwindow_init(XWindowConfig config)
     xwin.pf = pf.QuadPart;
 }
 
-void xwindow_update(bool topdown, v2f windim)
+void xwin_update(bool topdown, v2f windim)
 {
     // Get mouse position
     POINT mousePoint;
@@ -163,8 +166,10 @@ void xwindow_update(bool topdown, v2f windim)
     xwin.ice = false;
 }
 
-
-#define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, HINSTANCE instprev, PSTR cmdline, int cmdshow)
+#define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, \
+HINSTANCE instprev, \
+PSTR cmdline, \
+int cmdshow)
 
 #define XWNDPROC                        \
 case WM_SETCURSOR: {    \
@@ -245,28 +250,20 @@ xwin.mouse.right.released = true;    \
 } break                                 \
 
 
-struct XFile
-{
-    wchar_t name[512];
-    bool exists;
-    u32 size;
-    u8 *bytes;
-};
-
-inline LARGE_INTEGER xwallclock(void)
+inline LARGE_INTEGER xwin_time(void)
 {
     LARGE_INTEGER counter;
     QueryPerformanceCounter(&counter);
     return counter;
 }
 
-inline f32 xseconds(LARGE_INTEGER start, LARGE_INTEGER end)
+inline f32 xwin_seconds(LARGE_INTEGER start, LARGE_INTEGER end)
 {
     f32 r = ((f32)(end.QuadPart - start.QuadPart) / (f32)xwin.pf);
     return r;
 }
 
-bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
+bool xwin_dragged(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
 {
     bool dragged = false;
     
@@ -296,7 +293,7 @@ bool xdraggedhandle(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
     return dragged;
 }
 
-WNDCLASSEXW xwndclass(WNDPROC userwndproc)
+WNDCLASSEXW xwin_wndclass(WNDPROC userwndproc)
 {
     WNDCLASSEXW r = {
         sizeof(r), CS_HREDRAW | CS_VREDRAW, userwndproc, 0, 0,
@@ -305,155 +302,7 @@ WNDCLASSEXW xwndclass(WNDPROC userwndproc)
     return r;
 }
 
-void xfeatureleves(D3D_FEATURE_LEVEL* levels, s32 *count)
-{
-    D3D_FEATURE_LEVEL r[] = {
-        D3D_FEATURE_LEVEL_11_1,
-        D3D_FEATURE_LEVEL_11_0,
-        D3D_FEATURE_LEVEL_10_1,
-        D3D_FEATURE_LEVEL_10_0,
-        D3D_FEATURE_LEVEL_9_3,
-        D3D_FEATURE_LEVEL_9_2,
-        D3D_FEATURE_LEVEL_9_1
-    };
-    xncopy(levels, &r, narray(r), D3D_FEATURE_LEVEL);
-    *count = narray(r);
-}
-
-D3D11_RENDER_TARGET_BLEND_DESC xtargetblenddesc()
-{
-    D3D11_RENDER_TARGET_BLEND_DESC r = {
-        true,
-        D3D11_BLEND_SRC_ALPHA,
-        D3D11_BLEND_INV_SRC_ALPHA,
-        D3D11_BLEND_OP_ADD,
-        D3D11_BLEND_ONE,
-        D3D11_BLEND_ZERO,
-        D3D11_BLEND_OP_ADD,
-        D3D11_COLOR_WRITE_ENABLE_ALL,
-    };
-    return r;
-}
-
-D3D11_BLEND_DESC xblenddesc()
-{
-    D3D11_BLEND_DESC r = {
-        false,
-        false,
-    };
-    
-    r.RenderTarget[0] = xtargetblenddesc();
-    
-    return r;   
-}
-
-D3D11_BUFFER_DESC xcbufferdesc(s32 size)
-{
-    D3D11_BUFFER_DESC r = {
-        size, D3D11_USAGE_DEFAULT, 
-        D3D11_BIND_CONSTANT_BUFFER,
-        0, 0, 0,
-    };
-    return r;
-}
-
-D3D11_RASTERIZER_DESC xrasterstate()
-{
-    D3D11_RASTERIZER_DESC r =
-    {
-        D3D11_FILL_SOLID, D3D11_CULL_BACK, false,
-        0, 0, 0, true, true, false, false,
-    };
-    return r;
-}
-
-D3D11_SAMPLER_DESC xsamplerdesc()
-{
-    D3D11_SAMPLER_DESC r =
-    {
-        D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-        D3D11_TEXTURE_ADDRESS_WRAP,
-        D3D11_TEXTURE_ADDRESS_WRAP,
-        D3D11_TEXTURE_ADDRESS_WRAP,
-        D3D11_COMPARISON_NEVER,
-        0,
-        D3D11_FLOAT32_MAX,
-    };
-    return r;
-}
-
-DXGI_RATIONAL xrational(DWORD n, DWORD d)
-{
-	DXGI_RATIONAL r = {
-        n, d
-    };
-	return r;
-}
-
-BITMAPINFO xbmpinfo(int width, int height)
-{
-    BITMAPINFOHEADER h = {
-        sizeof(h), width, height, 1, 32
-    };
-    
-    BITMAPINFO r = {
-        h
-    };
-    
-    return r;
-}
-
-D3D11_DEPTH_STENCIL_DESC xdepthstencildesc()
-{
-    D3D11_DEPTH_STENCIL_DESC r = 
-    {
-        .DepthEnable = true,
-        D3D11_DEPTH_WRITE_MASK_ALL,
-        D3D11_COMPARISON_GREATER_EQUAL,
-        .StencilEnable = false,
-        .StencilReadMask = 0,
-        .StencilWriteMask = 0,
-        .FrontFace = {0},
-        .BackFace = {0},
-    };
-    return r;
-}
-
-D3D11_DEPTH_STENCIL_VIEW_DESC xdsviewdesc(DXGI_FORMAT format, 
-                                          D3D11_DSV_DIMENSION dim)
-{
-    D3D11_TEX2D_DSV t = {
-        0
-    };
-    
-    D3D11_DEPTH_STENCIL_VIEW_DESC r = {
-        format, dim,
-    };
-    
-    if (dim == D3D11_DSV_DIMENSION_TEXTURE2D) {
-        r.Texture2D = t;
-    } 
-    
-    return r;
-}
-
-D3D11_SHADER_RESOURCE_VIEW_DESC xshadresview(DXGI_FORMAT format, D3D11_SRV_DIMENSION dim)
-{
-    D3D11_SHADER_RESOURCE_VIEW_DESC r =
-    {
-        format,
-        dim,
-    };
-    
-    if (dim == D3D_SRV_DIMENSION_TEXTURE2D) {
-        r.Texture2D.MostDetailedMip = 0;
-        r.Texture2D.MipLevels = 1;
-    }
-    
-    return r;
-}
-
-void Clipboard_copy(wchar_t *text)
+void xwin_clipboard_copy(wchar_t *text)
 {
     HGLOBAL globalMemory = GlobalAlloc(GMEM_MOVEABLE, (xstrlen(text)+1) * sizeof(wchar_t));
     
@@ -477,7 +326,7 @@ void Clipboard_copy(wchar_t *text)
     GlobalFree(globalMemory);
 }
 
-s32 Clipboard_paste(wchar_t *text, int maxLength)
+s32 xwin_clipboard_paste(wchar_t *text, int maxLength)
 {
     s32 pastedLength = 0;
     
@@ -501,19 +350,19 @@ s32 Clipboard_paste(wchar_t *text, int maxLength)
     return pastedLength;
 }
 
-void xpath(wchar_t *path, u32 size)
+void xwin_path(wchar_t *path, u32 size)
 {
     GetModuleFileNameW(NULL, path, size);
 }
 
-void xpathascii(char *path, u32 size)
+void xwin_path_ascii(char *path, u32 size)
 {
     GetModuleFileNameA(NULL, path, size);
 }
 
-XFile xfileread(wchar_t *path)
+XFile xwin_file_read(wchar_t *path)
 {
-    XFile r = xalloc(sizeof *r);
+    XFile r = {0};
     
     FILE *f = 0;
     _wfopen_s(&f, path, L"rb, ccs=UTF-16LE");
@@ -523,15 +372,15 @@ XFile xfileread(wchar_t *path)
         long sz = ftell(f);
         rewind(f);
         
-        r->bytes = xalloc(sz+1);
-        if (r->bytes)
+        r.bytes = xalloc(sz+1);
+        if (r.bytes)
         {
-            size_t c = fread((wchar_t *)r->bytes, sizeof(wchar_t),
+            size_t c = fread((wchar_t *)r.bytes, sizeof(wchar_t),
                              sz/sizeof(wchar_t), f);
             if (c == sz/sizeof(wchar_t))
             {
-                r->exists = true;
-                r->size = sz;
+                r.exists = true;
+                r.size = sz;
             }
         }
     }
@@ -539,7 +388,7 @@ XFile xfileread(wchar_t *path)
     return r;
 }
 
-bool File_write(wchar_t *path, wchar_t *data, u32 size)
+bool xwin_file_write(wchar_t *path, wchar_t *data, u32 size)
 {
     bool r = false;
     HANDLE h;
@@ -562,11 +411,11 @@ bool File_write(wchar_t *path, wchar_t *data, u32 size)
 /*  Copies the exe path until last slash
     c:/my/path/to/the/app/main.exe
                          ^                            */
-void xpathabs(wchar_t *dst, u32 dstsize, wchar_t *filename)
+void xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename)
 {
     wchar_t *slashpos, *at, exepath[MAX_PATH], dir[260];
     
-    xpath(exepath, MAX_PATH);
+    xwin_path(exepath, MAX_PATH);
     
     slashpos = 0;
     at = exepath;
@@ -578,10 +427,10 @@ void xpathabs(wchar_t *dst, u32 dstsize, wchar_t *filename)
     _snwprintf_s(dst, dstsize, _TRUNCATE, L"%s\\%s", dir, filename);
 }
 
-void xpathabsascii(char *dst, u32 dstsize, char *filename)
+void xwin_path_abs_ascii(char *dst, u32 dstsize, char *filename)
 {
     char *slashpos, *at, exepath[MAX_PATH], dir[260];
-    xpathascii(exepath, MAX_PATH);
+    xwin_path_ascii(exepath, MAX_PATH);
     
     slashpos  = 0;
     at = exepath;
