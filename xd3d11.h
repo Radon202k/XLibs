@@ -95,10 +95,13 @@ typedef struct
     xd11_vsdr vertex_shader;
     xd11_psdr pixel_shader;
     xd11_iply input_layout;
-
+    
     /* Shaders resources */
-    Array_T vs_cbuffers;  /* ID3D11Buffer */
-    Array_T ps_resources; /* ID3D11ShaderResourceView */
+    u32 vs_cbuffer_count;
+    xd11_buff *vs_cbuffers;
+    
+    u32 ps_resource_count;
+    xd11_srvw *ps_resources;
     
     /* D3D11_VIEWPORT */
     Array_T viewports;
@@ -621,51 +624,29 @@ void xd11_clear_dsv(xd11_dsvw ds_view, u32 flags, UINT8 min, UINT8 max)
 
 void xd11_render_pass(XD11RenderPass *pass, u32 vertex_count)
 {
+    /* Topology */
     ID3D11DeviceContext_IASetPrimitiveTopology(xd11.device_context, pass->topology);
-    
+    /* Input Layout */
     ID3D11DeviceContext_IASetInputLayout(xd11.device_context, pass->input_layout);
-    
-    /*
-    ID3D11Buffer *vbs[1] = { pass->vertexBuffer };
-    UINT vbss[1] = { pass->vertexBufferStride };
-    UINT vbos[1] = { 0 };
-    D3D11_VIEWPORT vps[1] =  { { pass->viewport.min.x, pass->viewport.min.y, pass->viewport.max.x, pass->viewport.max.y, 0.0f, 1.0f } };
-    D3D11_RECT scs[1] = { { 0, 0, (LONG)xd11.backBufferSize.x, (LONG)xd11.backBufferSize.y } };
-
-    */
-    
-    if (pass->vertex_buffers.count > 0)
-    {
-        ID3D11DeviceContext_IASetVertexBuffers(xd11.device_context, 0, pass->vertex_buffers.count, pass->vertex_buffers.array, 
-                                               pass->vertex_buffers.strides, pass->vertex_buffers.offsets);
-    }
-    
+    /* Vertex Buffers */
+    XD11VertexBuffers *vb = &pass->vertex_buffers;
+    if (vb->count > 0)
+        ID3D11DeviceContext_IASetVertexBuffers(xd11.device_context, 0, vb->count, 
+                                               vb->array, vb->strides, vb->offsets);
+    /* Vertex Shader */
     ID3D11DeviceContext_VSSetShader(xd11.device_context, pass->vertex_shader, NULL, 0);
-    
-    if (pass->vs_cbuffers.top > 0)
-    {
-        s32 count;
-        ID3D11Buffer *array;
-        Array_toarray(pass->vs_cbuffers, &array, &count);
-        
+    /* VS CBuffers */
+    if (pass->vs_cbuffer_count > 0)
         ID3D11DeviceContext_VSSetConstantBuffers(xd11.device_context, 0, 
-                                                 count, &array);
-        
-        xfree(array);
-    }
-    
+                                                 pass->vs_cbuffer_count, pass->vs_cbuffers);
+    /* Pixel Shader */
     ID3D11DeviceContext_PSSetShader(xd11.device_context, pass->pixel_shader, NULL, 0);
-    ID3D11DeviceContext_PSSetSamplers(xd11.device_context, 0, 1, &pass->sampler_state);
-    
-    if (pass->ps_resources.top > 0)
-    {
-        s32 count;
-        ID3D11ShaderResourceView *array;
-        Array_toarray(pass->ps_resources, &array, &count);
+    /* PS Resources */
+    if (pass->ps_resource_count > 0)
         ID3D11DeviceContext_PSSetShaderResources(xd11.device_context, 0, 
-                                                 count, &array);
-        xfree(array);
-    }
+                                                 pass->ps_resource_count, pass->ps_resources);
+    /* Sampler State */
+    ID3D11DeviceContext_PSSetSamplers(xd11.device_context, 0, 1, &pass->sampler_state);
     
     {
         s32 count;
@@ -682,6 +663,7 @@ void xd11_render_pass(XD11RenderPass *pass, u32 vertex_count)
         Array_toarray(pass->scissors, &array, &count);
         ID3D11DeviceContext_RSSetScissorRects(xd11.device_context, 
                                               count, array);
+        xfree(array);
     }
     
     ID3D11DeviceContext_RSSetState(xd11.device_context, pass->rasterizer_state);
@@ -797,7 +779,7 @@ void xd11_initialize(XD11Config config)
         D3D_FEATURE_LEVEL_9_2,
         D3D_FEATURE_LEVEL_9_1
     };
-
+    
     if (FAILED(D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL,
                                              D3D11_CREATE_DEVICE_DEBUG, 
                                              feature_levels, narray(feature_levels), 

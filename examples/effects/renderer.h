@@ -75,7 +75,8 @@ typedef struct
     /* Core variables */
     RenderTarget target_default;
     
-    Array_T target_views; // ID3D11RenderTargetView
+    u32 target_view_count;
+    xd11_tgvw *target_views;
     
     TextureAtlas texture_atlas;
     
@@ -84,7 +85,7 @@ typedef struct
     /* Passes */
     XD11RenderPass pass_lines;
     XD11RenderPass pass_sprites;
-
+    
     /* Resources */
     Sprite sprite_white;
     Sprite sprite_arrow;
@@ -213,19 +214,19 @@ void renderer_post_update(void)
     xwin_update(true, xd11.window_size);
 }
 
-void renderer_depth_stencil(XD11RenderPass *pass,
+void renderer_depth_stencil(XD11DepthStencil *depth_stencil,
                             D3D11_TEXTURE2D_DESC desc_texture,
                             D3D11_DEPTH_STENCIL_VIEW_DESC desc_view,
                             D3D11_DEPTH_STENCIL_DESC desc_state)
 {
     /* Create depth stencil buffer texture */
-    pass->depth_stencil.texture = xd11_texture2d(desc_texture, 0);
+    depth_stencil->texture = xd11_texture2d(desc_texture, 0);
     
     /* Create depth stencil view */
-    pass->depth_stencil.view = xd11_depth_stencil_view(pass->depth_stencil.texture, desc_view);
+    depth_stencil->view = xd11_depth_stencil_view(depth_stencil->texture, desc_view);
     
     /* Create depth stencil state */            
-    pass->depth_stencil.state = xd11_depth_stencil_state(desc_state);
+    depth_stencil->state = xd11_depth_stencil_state(desc_state);
 }
 
 void renderer_initialize(void)
@@ -240,11 +241,12 @@ void renderer_initialize(void)
     renderer.target_default.texture = xd11_swapchain_get_buffer();
     
     /* Create render target view */
-    renderer.target_views = Array_new(1, sizeof(xd11_tgvw *));
-    Array_push(&renderer.target_views, xd11_target_view(renderer.target_default.texture));
+    renderer.target_view_count = 1;
+    renderer.target_views = xalloc(1*sizeof(xd11_tgvw));
+    renderer.target_views[0] = xd11_target_view(renderer.target_default.texture);
     
-    /* Create depth stencil texture/view/state */
-    renderer_depth_stencil(&renderer.pass_sprites,
+    /* Depth stencil */
+    renderer_depth_stencil(&renderer.target_default.depth_stencil,
                            (D3D11_TEXTURE2D_DESC)
                            {
                                (s32)xd11.back_buffer_size.x, // Width
@@ -276,11 +278,16 @@ void renderer_initialize(void)
                                {0}, // Back face
                            });
     
+    
+    /* Sprite and Lines */
+    renderer.pass_lines.depth_stencil = renderer.target_default.depth_stencil;
+    renderer.pass_sprites.depth_stencil = renderer.target_default.depth_stencil;
+    
     /* Texture atlas texture */
     {
         u32 atlas_size = 1024;
         u32 bytes_size = atlas_size*atlas_size*4;
-
+        
         /* Create D3D11 texture */
         D3D11_TEXTURE2D_DESC desc =
         {
@@ -296,14 +303,14 @@ void renderer_initialize(void)
             0 // Misc flags
         };
         renderer.texture_atlas.texture.handle = xd11_texture2d(desc, 0);
-
+        
         renderer.texture_atlas.texture.size   = fil2i(atlas_size);
-
+        
         /* Create CPU memory bitmap */
         s32 bitmap_size = renderer.texture_atlas.texture.size.x * 
             renderer.texture_atlas.texture.size.y * 4;
-
-
+        
+        
         renderer.texture_atlas.bytes  = (u8*)xalloc(bitmap_size);
     }
     
@@ -359,64 +366,64 @@ void renderer_create_line_pass(void)
     renderer.pass_lines.input_layout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
     
     /* Render target view */
-    renderer.pass_lines.target_view = Array_get(renderer.target_views, 0);
+    renderer.pass_lines.target_view = renderer.target_views[0];
     
     /* Blend state */
     renderer.pass_lines.blend_state = xd11_blend_state((D3D11_BLEND_DESC)
-                                                 {
-                                                     false,
-                                                     false,
-                                                     .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
-                                                         true,
-                                                         D3D11_BLEND_SRC_ALPHA,
-                                                         D3D11_BLEND_INV_SRC_ALPHA,
-                                                         D3D11_BLEND_OP_ADD,
-                                                         D3D11_BLEND_ONE,
-                                                         D3D11_BLEND_ZERO,
-                                                         D3D11_BLEND_OP_ADD,
-                                                         D3D11_COLOR_WRITE_ENABLE_ALL,
-                                                     },
-                                                 });
+                                                       {
+                                                           false,
+                                                           false,
+                                                           .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
+                                                               true,
+                                                               D3D11_BLEND_SRC_ALPHA,
+                                                               D3D11_BLEND_INV_SRC_ALPHA,
+                                                               D3D11_BLEND_OP_ADD,
+                                                               D3D11_BLEND_ONE,
+                                                               D3D11_BLEND_ZERO,
+                                                               D3D11_BLEND_OP_ADD,
+                                                               D3D11_COLOR_WRITE_ENABLE_ALL,
+                                                           },
+                                                       });
     /* Rasterizer state */
     renderer.pass_lines.rasterizer_state = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
-                                                           {
-                                                               D3D11_FILL_SOLID, 
-                                                               D3D11_CULL_BACK, 
-                                                               false,
-                                                               0, 
-                                                               0, 
-                                                               0, 
-                                                               true, 
-                                                               true, 
-                                                               false, 
-                                                               false,
-                                                           });
+                                                                 {
+                                                                     D3D11_FILL_SOLID, 
+                                                                     D3D11_CULL_BACK, 
+                                                                     false,
+                                                                     0, 
+                                                                     0, 
+                                                                     0, 
+                                                                     true, 
+                                                                     true, 
+                                                                     false, 
+                                                                     false,
+                                                                 });
     
     /* Sampler state */
     renderer.pass_lines.sampler_state = xd11_sampler_state((D3D11_SAMPLER_DESC)
-                                                     {
-                                                         D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                                                         D3D11_TEXTURE_ADDRESS_WRAP,
-                                                         D3D11_TEXTURE_ADDRESS_WRAP,
-                                                         D3D11_TEXTURE_ADDRESS_WRAP,
-                                                         D3D11_COMPARISON_NEVER,
-                                                         0,
-                                                         D3D11_FLOAT32_MAX,
-                                                     });
+                                                           {
+                                                               D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                                                               D3D11_TEXTURE_ADDRESS_WRAP,
+                                                               D3D11_TEXTURE_ADDRESS_WRAP,
+                                                               D3D11_TEXTURE_ADDRESS_WRAP,
+                                                               D3D11_COMPARISON_NEVER,
+                                                               0,
+                                                               D3D11_FLOAT32_MAX,
+                                                           });
     
     /* Vertex buffers */
     renderer.pass_lines.vertex_buffers.count = 1;
     renderer.pass_lines.vertex_buffers.array = xalloc(1*sizeof(ID3D11Buffer *));
     renderer.pass_lines.vertex_buffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
-                                                  {
-                                                      256*sizeof(LineVertex), 
-                                                      D3D11_USAGE_DYNAMIC, 
-                                                      D3D11_BIND_VERTEX_BUFFER,
-                                                      D3D11_CPU_ACCESS_WRITE, 
-                                                      0, 
-                                                      sizeof(LineVertex)
-                                                  },
-                                                  0);
+                                                              {
+                                                                  256*sizeof(LineVertex), 
+                                                                  D3D11_USAGE_DYNAMIC, 
+                                                                  D3D11_BIND_VERTEX_BUFFER,
+                                                                  D3D11_CPU_ACCESS_WRITE, 
+                                                                  0, 
+                                                                  sizeof(LineVertex)
+                                                              },
+                                                              0);
     
     /* Vertex buffer strides */
     renderer.pass_lines.vertex_buffers.strides = xalloc(1*sizeof(UINT));
@@ -427,40 +434,42 @@ void renderer_create_line_pass(void)
     renderer.pass_lines.vertex_buffers.offsets[0] = 0;
     
     /* Vertex shader constant buffers */
-    renderer.pass_lines.vs_cbuffers = Array_new(1, sizeof(xd11_buff));
-    Array_push(&renderer.pass_lines.vs_cbuffers, xd11_buffer((D3D11_BUFFER_DESC)
-                                                      {
-                                                          sizeof(mat4f),
-                                                          D3D11_USAGE_DEFAULT, 
-                                                          D3D11_BIND_CONSTANT_BUFFER,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                      },
-                                                      0));
+    renderer.pass_lines.vs_cbuffer_count = 1;
+    renderer.pass_lines.vs_cbuffers = xalloc(1*sizeof(xd11_buff));
+    
+    renderer.pass_lines.vs_cbuffers[0] = xd11_buffer((D3D11_BUFFER_DESC)
+                                                     {
+                                                         sizeof(mat4f),
+                                                         D3D11_USAGE_DEFAULT, 
+                                                         D3D11_BIND_CONSTANT_BUFFER,
+                                                         0,
+                                                         0,
+                                                         0,
+                                                     },
+                                                     0);
     
     /* Pixel shader resources */
-    renderer.pass_lines.ps_resources = Array_new(1, sizeof(xd11_srvw));
-    Array_push(&renderer.pass_lines.ps_resources, xd11_shader_res_view(renderer.texture_atlas.texture.handle,
-                                                              (D3D11_SHADER_RESOURCE_VIEW_DESC)
-                                                              {
-                                                                  DXGI_FORMAT_R8G8B8A8_UNORM,
-                                                                  D3D_SRV_DIMENSION_TEXTURE2D,
-                                                                  .Texture2D = (D3D11_TEX2D_SRV){0,1}
-                                                              }));
+    renderer.pass_lines.ps_resources = xalloc(1*sizeof(xd11_srvw));
+    renderer.pass_lines.ps_resources[0] = xd11_shader_res_view(renderer.texture_atlas.texture.handle,
+                                                               (D3D11_SHADER_RESOURCE_VIEW_DESC)
+                                                               {
+                                                                   DXGI_FORMAT_R8G8B8A8_UNORM,
+                                                                   D3D_SRV_DIMENSION_TEXTURE2D,
+                                                                   .Texture2D = (D3D11_TEX2D_SRV){0,1}
+                                                               });
     
     /* Topology */
     renderer.pass_lines.topology = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
-
+    
     /* Viewports */
     renderer.pass_lines.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&renderer.pass_lines.viewports, 
-        &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
+               &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
     
     /* Scissors */
     renderer.pass_lines.scissors = Array_new(1, sizeof(D3D11_RECT));
     Array_push(&renderer.pass_lines.scissors,
-        &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+               &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
 }
 
 void renderer_create_sprite_pass(void)
@@ -490,65 +499,65 @@ void renderer_create_sprite_pass(void)
     renderer.pass_sprites.input_layout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
     
     /* Render target view */
-    renderer.pass_sprites.target_view = Array_get(renderer.target_views, 0);
+    renderer.pass_sprites.target_view = renderer.target_views[0];
     
     /* Blend state */
     renderer.pass_sprites.blend_state = xd11_blend_state((D3D11_BLEND_DESC)
-                                                   {
-                                                       false,
-                                                       false,
-                                                       .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
-                                                           true,
-                                                           D3D11_BLEND_SRC_ALPHA,
-                                                           D3D11_BLEND_INV_SRC_ALPHA,
-                                                           D3D11_BLEND_OP_ADD,
-                                                           D3D11_BLEND_ONE,
-                                                           D3D11_BLEND_ZERO,
-                                                           D3D11_BLEND_OP_ADD,
-                                                           D3D11_COLOR_WRITE_ENABLE_ALL,
-                                                       },
-                                                   });
+                                                         {
+                                                             false,
+                                                             false,
+                                                             .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
+                                                                 true,
+                                                                 D3D11_BLEND_SRC_ALPHA,
+                                                                 D3D11_BLEND_INV_SRC_ALPHA,
+                                                                 D3D11_BLEND_OP_ADD,
+                                                                 D3D11_BLEND_ONE,
+                                                                 D3D11_BLEND_ZERO,
+                                                                 D3D11_BLEND_OP_ADD,
+                                                                 D3D11_COLOR_WRITE_ENABLE_ALL,
+                                                             },
+                                                         });
     
     /* Rasterizer state */
     renderer.pass_sprites.rasterizer_state = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
-                                                             {
-                                                                 D3D11_FILL_SOLID, 
-                                                                 D3D11_CULL_BACK, 
-                                                                 false,
-                                                                 0, 
-                                                                 0, 
-                                                                 0, 
-                                                                 true, 
-                                                                 true, 
-                                                                 false, 
-                                                                 false,
-                                                             });
+                                                                   {
+                                                                       D3D11_FILL_SOLID, 
+                                                                       D3D11_CULL_BACK, 
+                                                                       false,
+                                                                       0, 
+                                                                       0, 
+                                                                       0, 
+                                                                       true, 
+                                                                       true, 
+                                                                       false, 
+                                                                       false,
+                                                                   });
     
     /* Sampler state */
     renderer.pass_sprites.sampler_state = xd11_sampler_state((D3D11_SAMPLER_DESC)
-                                                       {
-                                                           D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                                                           D3D11_TEXTURE_ADDRESS_WRAP,
-                                                           D3D11_TEXTURE_ADDRESS_WRAP,
-                                                           D3D11_TEXTURE_ADDRESS_WRAP,
-                                                           D3D11_COMPARISON_NEVER,
-                                                           0,
-                                                           D3D11_FLOAT32_MAX,
-                                                       });
+                                                             {
+                                                                 D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                                                                 D3D11_TEXTURE_ADDRESS_WRAP,
+                                                                 D3D11_TEXTURE_ADDRESS_WRAP,
+                                                                 D3D11_TEXTURE_ADDRESS_WRAP,
+                                                                 D3D11_COMPARISON_NEVER,
+                                                                 0,
+                                                                 D3D11_FLOAT32_MAX,
+                                                             });
     
     /* Vertex buffers */
     renderer.pass_sprites.vertex_buffers.count = 1;
     renderer.pass_sprites.vertex_buffers.array = xalloc(1*sizeof(ID3D11Buffer *));
     renderer.pass_sprites.vertex_buffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
-                                                    {
-                                                        256*sizeof(TexturedVertex), 
-                                                        D3D11_USAGE_DYNAMIC, 
-                                                        D3D11_BIND_VERTEX_BUFFER,
-                                                        D3D11_CPU_ACCESS_WRITE, 
-                                                        0, 
-                                                        sizeof(TexturedVertex)
-                                                    },
-                                                    0);
+                                                                {
+                                                                    256*sizeof(TexturedVertex), 
+                                                                    D3D11_USAGE_DYNAMIC, 
+                                                                    D3D11_BIND_VERTEX_BUFFER,
+                                                                    D3D11_CPU_ACCESS_WRITE, 
+                                                                    0, 
+                                                                    sizeof(TexturedVertex)
+                                                                },
+                                                                0);
     /* Vertex buffers strides */
     renderer.pass_sprites.vertex_buffers.strides = xalloc(1*sizeof(UINT));
     renderer.pass_sprites.vertex_buffers.strides[0] = sizeof(TexturedVertex);
@@ -558,42 +567,40 @@ void renderer_create_sprite_pass(void)
     renderer.pass_sprites.vertex_buffers.offsets[0] = 0;
     
     /* Vertex Shader Constant buffers */
-    renderer.pass_sprites.vs_cbuffers = Array_new(1, sizeof(xd11_buff));
-    Array_push(&renderer.pass_sprites.vs_cbuffers,
-        xd11_buffer((XD11_BUFD)
-        {
-            sizeof(mat4f),
-            D3D11_USAGE_DEFAULT, 
-            D3D11_BIND_CONSTANT_BUFFER,
-            0,
-            0,
-            0,
-        },
-        0));
-
+    renderer.pass_sprites.vs_cbuffers = xalloc(1*sizeof(xd11_buff));
+    renderer.pass_sprites.vs_cbuffers[0] = xd11_buffer((XD11_BUFD)
+                                                       {
+                                                           sizeof(mat4f),
+                                                           D3D11_USAGE_DEFAULT, 
+                                                           D3D11_BIND_CONSTANT_BUFFER,
+                                                           0,
+                                                           0,
+                                                           0,
+                                                       },
+                                                       0);
+    
     /* Pixel Shader Resources */
-    renderer.pass_sprites.ps_resources = Array_new(1, sizeof(xd11_srvw));
-    Array_push(&renderer.pass_sprites.ps_resources,
-        xd11_shader_res_view(renderer.texture_atlas.texture.handle,
-        (D3D11_SHADER_RESOURCE_VIEW_DESC)
-        {
-            DXGI_FORMAT_R8G8B8A8_UNORM,
-            D3D_SRV_DIMENSION_TEXTURE2D,
-            .Texture2D = (D3D11_TEX2D_SRV){0,1}
-        }));
-
+    renderer.pass_sprites.ps_resources = xalloc(1*sizeof(xd11_srvw));
+    renderer.pass_sprites.ps_resources[0] = xd11_shader_res_view(renderer.texture_atlas.texture.handle,
+                                                                 (D3D11_SHADER_RESOURCE_VIEW_DESC)
+                                                                 {
+                                                                     DXGI_FORMAT_R8G8B8A8_UNORM,
+                                                                     D3D_SRV_DIMENSION_TEXTURE2D,
+                                                                     .Texture2D = (D3D11_TEX2D_SRV){0,1}
+                                                                 });
+    
     /* Topology */
     renderer.pass_sprites.topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
     
     /* Viewports */
     renderer.pass_sprites.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&renderer.pass_sprites.viewports,
-        &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
+               &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
     
     /* Scissors */
     renderer.pass_sprites.scissors = Array_new(1, sizeof(D3D11_RECT));
     Array_push(&renderer.pass_sprites.scissors,
-        &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+               &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
 }
 
 void renderer_create_resources(void)
@@ -615,8 +622,8 @@ void renderer_free_passes(void)
     xfree(renderer.pass_lines.vertex_buffers.array);
     xfree(renderer.pass_lines.vertex_buffers.strides);
     xfree(renderer.pass_lines.vertex_buffers.offsets);
-    Array_free(&renderer.pass_lines.vs_cbuffers);
-    Array_free(&renderer.pass_lines.ps_resources);
+    xfree(renderer.pass_lines.vs_cbuffers);
+    xfree(renderer.pass_lines.ps_resources);
     Array_free(&renderer.pass_lines.viewports);
     Array_free(&renderer.pass_lines.scissors);
     
@@ -624,13 +631,13 @@ void renderer_free_passes(void)
     xfree(renderer.pass_sprites.vertex_buffers.array);
     xfree(renderer.pass_sprites.vertex_buffers.strides);
     xfree(renderer.pass_sprites.vertex_buffers.offsets);
-    Array_free(&renderer.pass_sprites.vs_cbuffers);
-    Array_free(&renderer.pass_sprites.ps_resources);
+    xfree(renderer.pass_sprites.vs_cbuffers);
+    xfree(renderer.pass_sprites.ps_resources);
     Array_free(&renderer.pass_sprites.viewports);
     Array_free(&renderer.pass_sprites.scissors);
     
     // Core
-    Array_free(&renderer.target_views);
+    xfree(renderer.target_views);
 }
 
 void renderer_produce_textured_vertices(TexturedVertex **vertices, u32 *count)
@@ -666,7 +673,8 @@ void renderer_update_line_pass(void)
     };
     
     /* Update constant buffers */
-    xd11_update_subres(Array_get(renderer.pass_lines.vs_cbuffers, 0), &matrixProjection);
+    xd11_buff cbuffer = renderer.pass_lines.vs_cbuffers[0];
+    xd11_update_subres(cbuffer, &matrixProjection);
     
     /* Set render target */
     xd11_set_render_target(renderer.pass_lines.target_view, renderer.pass_lines.depth_stencil.view);
@@ -677,10 +685,10 @@ void renderer_update_line_pass(void)
     
     /* Update viewport and scissor rect*/
     Array_set(renderer.pass_lines.viewports, 0, 
-        &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
-
+              &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
+    
     Array_set(renderer.pass_lines.scissors, 0,
-        &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+              &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
     
     LineVertex data[2] =
     {
@@ -702,14 +710,14 @@ void renderer_update_sprite_pass(void)
         0, 0, 0, 1,
     };
     
-    xd11_update_subres(Array_get(renderer.pass_sprites.vs_cbuffers, 0), &matrixProjection);
+    xd11_update_subres(renderer.pass_sprites.vs_cbuffers[0], &matrixProjection);
     
     /* Update viewport and scissor rect*/
     Array_set(renderer.pass_sprites.viewports, 0,
-        &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
-
+              &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
+    
     Array_set(renderer.pass_sprites.scissors, 0,
-        &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+              &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
     
     u32 vertexCount = 0;
     TexturedVertex *vertices = 0;
@@ -738,16 +746,21 @@ LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
 
 void xd11_resized(void)
 {
-    /* Release views and textures */
-    for (s32 i=0; i<renderer.target_views.top; ++i)
-        ID3D11RenderTargetView_Release((xd11_tgvw)Array_get(renderer.target_views, i));
+    /* Release target views */
+    for (u32 i=0; i<renderer.target_view_count; ++i)
+        ID3D11RenderTargetView_Release((xd11_tgvw)renderer.target_views[i]);
     
-    ID3D11DepthStencilView_Release(renderer.pass_lines.depth_stencil.view);
-    ID3D11Texture2D_Release       (renderer.pass_lines.depth_stencil.texture);
-
-    ID3D11DepthStencilView_Release(renderer.pass_sprites.depth_stencil.view);
-    ID3D11Texture2D_Release       (renderer.pass_sprites.depth_stencil.texture);
-
+    /* Default Target Depth Stencil Texture and View */
+    ID3D11DepthStencilView_Release(renderer.target_default.depth_stencil.view);
+    ID3D11Texture2D_Release       (renderer.target_default.depth_stencil.texture);
+    
+    /* Lines and Sprites passes pointers */
+    renderer.pass_lines.depth_stencil.view = 0;
+    renderer.pass_lines.depth_stencil.texture = 0;
+    renderer.pass_sprites.depth_stencil.view = 0;
+    renderer.pass_sprites.depth_stencil.texture = 0;
+    
+    /* Default Target Texture */
     ID3D11Texture2D_Release(renderer.target_default.texture);
     
     /* Resize the swapchain buffers */
@@ -758,38 +771,47 @@ void xd11_resized(void)
                                  DXGI_FORMAT_R8G8B8A8_UNORM, 
                                  0);
     
-    /* Get backbuffer texture from swap chain */
+    /* Get default target backbuffer texture from swap chain */
     renderer.target_default.texture = xd11_swapchain_get_buffer();
     
-    /* Create render target view */
-    Array_set(renderer.target_views, 0,
-        xd11_target_view(renderer.target_default.texture));
-    
-    /* Create depth stencil texture */
+    /* Create default target depth stencil texture */
     renderer.target_default.depth_stencil.texture = xd11_texture2d((D3D11_TEXTURE2D_DESC)
-                                                  {
-                                                      (s32)xd11.back_buffer_size.x,
-                                                      (s32)xd11.back_buffer_size.y,
-                                                      0, 
-                                                      1,
-                                                      DXGI_FORMAT_D24_UNORM_S8_UINT,
-                                                      (DXGI_SAMPLE_DESC){1,0}, 
-                                                      D3D11_USAGE_DEFAULT,
-                                                      D3D11_BIND_DEPTH_STENCIL, 
-                                                      0, 
-                                                      0
-                                                  },
-                                                  0);
+                                                                   {
+                                                                       (s32)xd11.back_buffer_size.x,
+                                                                       (s32)xd11.back_buffer_size.y,
+                                                                       0, 
+                                                                       1,
+                                                                       DXGI_FORMAT_D24_UNORM_S8_UINT,
+                                                                       (DXGI_SAMPLE_DESC){1,0}, 
+                                                                       D3D11_USAGE_DEFAULT,
+                                                                       D3D11_BIND_DEPTH_STENCIL, 
+                                                                       0, 
+                                                                       0
+                                                                   },
+                                                                   0);
     
     /* Create depth stencil view */
     renderer.target_default.depth_stencil.view = 
-    xd11_depth_stencil_view(renderer.target_default.depth_stencil.texture,
-        (D3D11_DEPTH_STENCIL_VIEW_DESC)
-        {
-            DXGI_FORMAT_D24_UNORM_S8_UINT, 
-            D3D11_DSV_DIMENSION_TEXTURE2D, 
-            .Texture2D = (D3D11_TEX2D_DSV){0}
-        });
+        xd11_depth_stencil_view(renderer.target_default.depth_stencil.texture,
+                                (D3D11_DEPTH_STENCIL_VIEW_DESC)
+                                {
+                                    DXGI_FORMAT_D24_UNORM_S8_UINT, 
+                                    D3D11_DSV_DIMENSION_TEXTURE2D, 
+                                    .Texture2D = (D3D11_TEX2D_DSV){0}
+                                });
+    
+    /* Lines and Sprites passes pointers */
+    renderer.pass_lines.depth_stencil.view = renderer.target_default.depth_stencil.view;
+    renderer.pass_lines.depth_stencil.texture = renderer.target_default.depth_stencil.texture;
+    renderer.pass_sprites.depth_stencil.view = renderer.target_default.depth_stencil.view;
+    renderer.pass_sprites.depth_stencil.texture = renderer.target_default.depth_stencil.texture;
+    
+    /* Create  render target view */
+    renderer.target_views[0] = xd11_target_view(renderer.target_default.texture);
+    
+    /* Lines and Sprites passes Target view pointers */
+    renderer.pass_sprites.target_view = renderer.target_views[0];
+    renderer.pass_lines.target_view = renderer.target_views[0];
 }
 
 u8 *renderer_load_png(wchar_t *path, v2i *dim, bool premulalpha)
@@ -846,7 +868,7 @@ u8 *renderer_load_png(wchar_t *path, v2i *dim, bool premulalpha)
 }
 
 void renderer_blit_simple_unchecked(u8 *dst, v2i dest_size,
-    u8 *src, v2i at, v2i dim)
+                                    u8 *src, v2i at, v2i dim)
 {
     u8 *rowSrc, *rowDst;
     u32 *pxSrc, *pxDst;
