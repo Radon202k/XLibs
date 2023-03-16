@@ -27,28 +27,35 @@
 #define XD11_SDAT D3D11_SUBRESOURCE_DATA
 
 #define XD11_TGBD D3D11_RENDER_TARGET_BLEND_DESC
-#define XD11_BLDD D3D11_BLEND_DESC
-#define XD11_BUFD D3D11_BUFFER_DESC
-#define XD11_RASD D3D11_RASTERIZER_DESC
-#define XD11_SMPD D3D11_SAMPLER_DESC
-#define XD11_DPSD D3D11_DEPTH_STENCIL_DESC
-#define XD11_T2DD D3D11_TEXTURE2D_DESC
-#define XD11_BUFD D3D11_BUFFER_DESC
-#define XD11_DSVD D3D11_DEPTH_STENCIL_VIEW_DESC
-#define XD11_SRVD D3D11_SHADER_RESOURCE_VIEW_DESC
 
+/* Texture 2D */
+#define XD11_TX2D D3D11_TEXTURE2D_DESC
 #define xd11_tx2d ID3D11Texture2D *
-#define xd11_buff ID3D11Buffer *
-#define xd11_tgvw ID3D11RenderTargetView *
-#define xd11_dsvw ID3D11DepthStencilView *
-#define xd11_srvw ID3D11ShaderResourceView *
-#define xd11_dsst ID3D11DepthStencilState *
-#define xd11_blst ID3D11BlendState *
-#define xd11_rtst ID3D11RasterizerState *
-#define xd11_smst ID3D11SamplerState *
-#define xd11_vsdr ID3D11VertexShader *
-#define xd11_psdr ID3D11PixelShader *
-#define xd11_iply ID3D11InputLayout *
+/* Buffer */
+#define XD11_BUFD D3D11_BUFFER_DESC
+#define xd11_buf  ID3D11Buffer *
+/* Blend */
+#define XD11_BLND D3D11_BLEND_DESC
+#define xd11_blns ID3D11BlendState *
+/* Rasterizer */
+#define XD11_RASD D3D11_RASTERIZER_DESC
+#define xd11_rass ID3D11RasterizerState *
+/* Sampler */
+#define XD11_SMPD D3D11_SAMPLER_DESC
+#define xd11_smps ID3D11SamplerState *
+/* Shader Resource View */
+#define XD11_SRVD D3D11_SHADER_RESOURCE_VIEW_DESC
+#define xd11_srv  ID3D11ShaderResourceView *
+/* Depth Stencil */
+#define XD11_DSD  D3D11_DEPTH_STENCIL_DESC
+#define xd11_dsv  ID3D11DepthStencilView *
+#define XD11_DSVD D3D11_DEPTH_STENCIL_VIEW_DESC
+
+#define xd11_tgv  ID3D11RenderTargetView *
+#define xd11_dss  ID3D11DepthStencilState *
+#define xd11_vs   ID3D11VertexShader *
+#define xd11_ps   ID3D11PixelShader *
+#define xd11_il   ID3D11InputLayout *
 
 /* =========================================================================
    DATA TYPES THAT THE USER CARES ABOUT
@@ -68,7 +75,7 @@ typedef struct
 typedef struct
 {
     u32 count;
-    xd11_buff *array; 
+    xd11_buf *array; 
     u32 *strides;
     u32 *offsets;
 } XD11VertexBuffers;
@@ -76,32 +83,32 @@ typedef struct
 typedef struct
 {
     xd11_tx2d texture;
-    xd11_dsvw view;
-    xd11_dsst state;
+    xd11_dsv view;
+    xd11_dss state;
 } XD11DepthStencil;
 
 typedef struct
 {
     /* States */
-    xd11_blst blend_state; 
-    xd11_rtst rasterizer_state;
-    xd11_smst sampler_state;
+    xd11_blns blend_state; 
+    xd11_rass rasterizer_state;
+    xd11_smps sampler_state;
     XD11DepthStencil depth_stencil;
     
     /* Vertex Buffers */
     XD11VertexBuffers vertex_buffers;
     
     /* Shaders */
-    xd11_vsdr vertex_shader;
-    xd11_psdr pixel_shader;
-    xd11_iply input_layout;
+    xd11_vs vertex_shader;
+    xd11_ps pixel_shader;
+    xd11_il input_layout;
     
     /* Shaders resources */
     u32 vs_cbuffer_count;
-    xd11_buff *vs_cbuffers;
+    xd11_buf *vs_cbuffers;
     
     u32 ps_resource_count;
-    xd11_srvw *ps_resources;
+    xd11_srv *ps_resources;
     
     /* D3D11_VIEWPORT */
     Array_T viewports;
@@ -110,7 +117,7 @@ typedef struct
     Array_T scissors;
     
     /* Other */
-    xd11_tgvw target_view;
+    xd11_tgv target_view;
     D3D11_PRIMITIVE_TOPOLOGY topology;
 } XD11RenderPass;
 
@@ -121,7 +128,6 @@ typedef struct
     s32 max_simul_lines;
     s32 glyph_maker_size;
     
-    bool topDown;
     DWORD wndclass_style_ex;
     DWORD wndclass_style;
     v2f back_buffer_size;
@@ -149,7 +155,7 @@ typedef struct
     char file_name[512];
     v2i size;
     xd11_tx2d handle;
-    xd11_srvw shader_res_view;
+    xd11_srv shader_res_view;
 } XD11Texture;
 
 /* =========================================================================
@@ -167,11 +173,11 @@ v2f  xd11_monitor_size (void);
     DIRECT3D 11 HELPER FUNCTIONS (Less verbose than D3D11 API)
    ========================================================================= */
 
-XD11_BLDD xd11_blend_desc   (void);
+XD11_BLND xd11_blend_desc   (void);
 XD11_RASD xd11_raster_desc  (void);
 XD11_SMPD xd11_sampler_desc (void);
 XD11_TGBD xd11_target_blend_desc  (void);
-XD11_DPSD xd11_depth_stencil_desc (void);
+XD11_DSD  xd11_depth_stencil_desc (void);
 XD11_BUFD xd11_const_buffer_desc  (s32 size);
 XD11_DSVD xd11_depth_stencil_view_desc (DXGI_FORMAT format, D3D11_DSV_DIMENSION dim);
 XD11_SRVD xd11_shader_res_view_desc    (DXGI_FORMAT format, D3D11_SRV_DIMENSION dim);
@@ -180,33 +186,33 @@ XD11_RTIO xd11_rational      (u32 numerator, u32 denominator);
 XD11_BMPI xd11_bitmap_info   (s32 width, s32 height);
 void      xd11_update_subres (void *resource, void *data);
 
-void      xd11_set_target  (xd11_tgvw target_view, xd11_dsvw ds_view);
-void      xd11_set_targets (u32 count, xd11_tgvw *target_views, xd11_dsvw ds_view);
+void      xd11_set_target  (xd11_tgv target_view, xd11_dsv ds_view);
+void      xd11_set_targets (u32 count, xd11_tgv *target_views, xd11_dsv ds_view);
 
 xd11_tx2d xd11_swap_chain_buffer (void);
 
-xd11_buff xd11_buffer    (XD11_BUFD desc, XD11_SDAT *data);
-xd11_tx2d xd11_texture2d (XD11_T2DD desc, XD11_SDAT *data);
+xd11_buf  xd11_buffer    (XD11_BUFD desc, XD11_SDAT *data);
+xd11_tx2d xd11_texture2d (XD11_TX2D desc, XD11_SDAT *data);
 
-xd11_tgvw xd11_target_view        (xd11_tx2d texture);
-xd11_dsvw xd11_depth_stencil_view (xd11_tx2d ds_texture, XD11_DSVD ds_desc);
-xd11_srvw xd11_shader_res_view    (xd11_tx2d texture, XD11_SRVD desc);
+xd11_tgv xd11_target_view        (xd11_tx2d texture);
+xd11_dsv xd11_depth_stencil_view (xd11_tx2d ds_texture, XD11_DSVD ds_desc);
+xd11_srv xd11_shader_res_view    (xd11_tx2d texture, XD11_SRVD desc);
 
-void      xd11_clear_target_view        (xd11_tgvw target_view, v4f clear_color);
-void      xd11_clear_depth_stencil_view (xd11_dsvw ds_view, u32 flags, UINT8 min, UINT8 max);
+void      xd11_clear_target_view        (xd11_tgv target_view, v4f clear_color);
+void      xd11_clear_depth_stencil_view (xd11_dsv ds_view, u32 flags, UINT8 min, UINT8 max);
 
-xd11_dsst xd11_depth_stencil_state (XD11_DPSD desc);
-xd11_blst xd11_blend_state         (XD11_BLDD desc);
-xd11_rtst xd11_rasterizer_state    (XD11_RASD desc);
-xd11_smst xd11_sampler_state       (XD11_SMPD desc);
+xd11_dss  xd11_depth_stencil_state (XD11_DSD  desc);
+xd11_blns xd11_blend_state         (XD11_BLND desc);
+xd11_rass xd11_rasterizer_state    (XD11_RASD desc);
+xd11_smps xd11_sampler_state       (XD11_SMPD desc);
 
 void      xd11_texture2d_update (XD11Texture texture, u8 *bytes);
 v2f       xd11_monitor_size (void);
 
-xd11_vsdr xd11_compile_vertex_shader (char *source, ID3DBlob **compiledVS);
-xd11_psdr xd11_compile_pixel_shader  (char *source, ID3DBlob **compiledPS);
+xd11_vs xd11_compile_vertex_shader (char *source, ID3DBlob **compiledVS);
+xd11_ps xd11_compile_pixel_shader  (char *source, ID3DBlob **compiledPS);
 
-xd11_iply xd11_input_layout  (ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *a, u32 c);
+xd11_il   xd11_input_layout  (ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *a, u32 c);
 void      xd11_buffer_update (ID3D11Buffer *buffer, void *data, u32 size);
 void      xd11_render_pass   (XD11RenderPass *pass, u32 vertex_count);
 void      xd11_swap_chain_resize (void);
@@ -253,9 +259,9 @@ XD11_TGBD xd11_target_blend_desc()
     return r;
 }
 
-XD11_BLDD xd11_blend_desc()
+XD11_BLND xd11_blend_desc()
 {
-    XD11_BLDD r = {
+    XD11_BLND r = {
         false,
         false,
     };
@@ -321,9 +327,9 @@ BITMAPINFO xd11_bitmap_info(int width, int height)
     return r;
 }
 
-XD11_DPSD xd11_depth_stencil_desc(void)
+XD11_DSD xd11_depth_stencil_desc(void)
 {
-    XD11_DPSD r = 
+    XD11_DSD r = 
     {
         .DepthEnable = true,
         D3D11_DEPTH_WRITE_MASK_ALL,
@@ -370,9 +376,9 @@ XD11_SRVD xd11_shader_res_view_desc(DXGI_FORMAT format, D3D11_SRV_DIMENSION dim)
     return r;
 }
 
-void xd11_set_render_target(xd11_tgvw view, xd11_dsvw ds_view)
+void xd11_set_render_target(xd11_tgv view, xd11_dsv ds_view)
 {
-    xd11_tgvw views[1] = 
+    xd11_tgv views[1] = 
     {
         view
     };
@@ -383,7 +389,7 @@ void xd11_set_render_target(xd11_tgvw view, xd11_dsvw ds_view)
                                            ds_view);
 }
 
-void xd11_set_targets(u32 count, xd11_tgvw *target_views, xd11_dsvw ds_view)
+void xd11_set_targets(u32 count, xd11_tgv *target_views, xd11_dsv ds_view)
 {
     ID3D11DeviceContext_OMSetRenderTargets(xd11.device_context,
                                            count,
@@ -410,15 +416,15 @@ xd11_tx2d xd11_swapchain_get_buffer(void)
     return result;
 }
 
-xd11_buff xd11_buffer(D3D11_BUFFER_DESC desc, D3D11_SUBRESOURCE_DATA *data)
+xd11_buf xd11_buffer(XD11_BUFD desc, XD11_SDAT *data)
 {
-    xd11_buff result = 0;
+    xd11_buf result = 0;
     if (FAILED(ID3D11Device_CreateBuffer(xd11.device, &desc, 0, &result)))
         assert(!"Can't fail");
     return result;
 }
 
-xd11_tx2d xd11_texture2d(XD11_T2DD desc, XD11_SDAT *data)
+xd11_tx2d xd11_texture2d(XD11_TX2D desc, XD11_SDAT *data)
 {
     xd11_tx2d result = 0;
     if (FAILED(ID3D11Device_CreateTexture2D(xd11.device, &desc, data, &result)))
@@ -426,9 +432,9 @@ xd11_tx2d xd11_texture2d(XD11_T2DD desc, XD11_SDAT *data)
     return result;
 }
 
-xd11_tgvw xd11_target_view(xd11_tx2d target_texture)
+xd11_tgv xd11_target_view(xd11_tx2d target_texture)
 {
-    xd11_tgvw result = 0;
+    xd11_tgv result = 0;
     if (FAILED(ID3D11Device_CreateRenderTargetView(xd11.device, 
                                                    (ID3D11Resource* )target_texture, 
                                                    0, &result)))
@@ -436,9 +442,9 @@ xd11_tgvw xd11_target_view(xd11_tx2d target_texture)
     return result;
 }
 
-xd11_dsvw xd11_depth_stencil_view(xd11_tx2d texture, XD11_DSVD desc)
+xd11_dsv xd11_depth_stencil_view(xd11_tx2d texture, XD11_DSVD desc)
 {
-    xd11_dsvw result = 0;
+    xd11_dsv result = 0;
     if (FAILED(ID3D11Device_CreateDepthStencilView(xd11.device, 
                                                    (ID3D11Resource *)texture, 
                                                    &desc,
@@ -447,9 +453,9 @@ xd11_dsvw xd11_depth_stencil_view(xd11_tx2d texture, XD11_DSVD desc)
     return result;
 }
 
-xd11_srvw xd11_shader_res_view(xd11_tx2d texture, XD11_SRVD desc)
+xd11_srv xd11_shader_res_view(xd11_tx2d texture, XD11_SRVD desc)
 {
-    xd11_srvw result = 0;
+    xd11_srv result = 0;
     if (FAILED(ID3D11Device_CreateShaderResourceView(xd11.device, 
                                                      (ID3D11Resource*)texture, 
                                                      &desc,
@@ -459,9 +465,9 @@ xd11_srvw xd11_shader_res_view(xd11_tx2d texture, XD11_SRVD desc)
     return result;
 }
 
-ID3D11DepthStencilState *xd11_depth_stencil_state(D3D11_DEPTH_STENCIL_DESC desc)
+xd11_dss xd11_depth_stencil_state(XD11_DSD desc)
 {
-    ID3D11DepthStencilState *result = 0;
+    xd11_dss result = 0;
     if (FAILED(ID3D11Device_CreateDepthStencilState(xd11.device, 
                                                     &desc, 
                                                     &result)))
@@ -469,9 +475,9 @@ ID3D11DepthStencilState *xd11_depth_stencil_state(D3D11_DEPTH_STENCIL_DESC desc)
     return result;
 }
 
-ID3D11BlendState *xd11_blend_state(D3D11_BLEND_DESC desc)
+xd11_blns xd11_blend_state(XD11_BLND desc)
 {
-    ID3D11BlendState *result = 0;
+    xd11_blns result = 0;
     if (FAILED(ID3D11Device_CreateBlendState(xd11.device, 
                                              &desc, 
                                              &result)))
@@ -479,9 +485,9 @@ ID3D11BlendState *xd11_blend_state(D3D11_BLEND_DESC desc)
     return result;
 }
 
-ID3D11RasterizerState *xd11_rasterizer_state(D3D11_RASTERIZER_DESC desc)
+xd11_rass xd11_rasterizer_state(XD11_RASD desc)
 {
-    ID3D11RasterizerState *result = 0;
+    xd11_rass result = 0;
     if (FAILED(ID3D11Device_CreateRasterizerState(xd11.device,
                                                   &desc,
                                                   &result)))
@@ -489,9 +495,9 @@ ID3D11RasterizerState *xd11_rasterizer_state(D3D11_RASTERIZER_DESC desc)
     return result;
 }
 
-ID3D11SamplerState *xd11_sampler_state(D3D11_SAMPLER_DESC desc)
+xd11_smps xd11_sampler_state(XD11_SMPD desc)
 {
-    ID3D11SamplerState *result = 0;
+    xd11_smps result = 0;
     if (FAILED(ID3D11Device_CreateSamplerState(xd11.device, 
                                                &desc, 
                                                &result)))
@@ -583,9 +589,9 @@ ID3D11PixelShader *xd11_compile_pixel_shader(char *source, ID3DBlob **compiledPS
     return result;
 }
 
-xd11_iply xd11_input_layout(ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *array, u32 count)
+xd11_il xd11_input_layout(ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *array, u32 count)
 {    
-    xd11_iply result = 0;
+    xd11_il result = 0;
     // And create the input layout
     void *vsPointer = ID3D10Blob_GetBufferPointer(vs);
     u32 vsSize = (u32)ID3D10Blob_GetBufferSize(vs);
@@ -597,7 +603,7 @@ xd11_iply xd11_input_layout(ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *array, u32 c
     return result;
 }
 
-void xd11_buffer_update(xd11_buff buffer, void *data, u32 size)
+void xd11_buffer_update(xd11_buf buffer, void *data, u32 size)
 {
     D3D11_MAPPED_SUBRESOURCE mapped_sub_resource;
     ID3D11DeviceContext_Map(xd11.device_context, 
@@ -615,7 +621,7 @@ void xd11_clear_rtv(ID3D11RenderTargetView *render_target_view, v4f clear_color)
                                               clear_color.e);
 }
 
-void xd11_clear_dsv(xd11_dsvw ds_view, u32 flags, UINT8 min, UINT8 max)
+void xd11_clear_dsv(xd11_dsv ds_view, u32 flags, UINT8 min, UINT8 max)
 {
     ID3D11DeviceContext_ClearDepthStencilView(xd11.device_context, 
                                               ds_view, 

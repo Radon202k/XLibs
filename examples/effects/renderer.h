@@ -33,6 +33,13 @@ typedef struct
 
 typedef struct
 {
+    v2f a;
+    v2f b;
+    v4f color;
+} RenderCommandLine;
+
+typedef struct
+{
     v2f position;
     v2f size;
     v4f color;
@@ -46,23 +53,30 @@ typedef struct
     Sprite sprite;
 } RenderCommandSprite;
 
+typedef enum RenderCommandType
+{
+    RenderCommandType_null,
+    RenderCommandType_line,
+    RenderCommandType_rect,
+    RenderCommandType_sprite,
+} RenderCommandType;
+
 typedef struct RenderCommand
 {
+    RenderCommandType type;
     union
     {
+        RenderCommandLine line;
         RenderCommandRect rect;
         RenderCommandSprite sprite;
     };
-    
-    struct RenderCommand *next_free;
 } RenderCommand;
 
 typedef struct
 {
-    RenderCommand storage[4096];
-    u32 index;
-    RenderCommand *free_list;
-} RenderCommandPool;
+    RenderCommand commands[4096];
+    u32 command_index;
+} RenderBatch;
 
 typedef struct
 {
@@ -76,7 +90,7 @@ typedef struct
     RenderTarget target_default;
     
     u32 target_view_count;
-    xd11_tgvw *target_views;
+    xd11_tgv *target_views;
     
     TextureAtlas texture_atlas;
     
@@ -100,7 +114,12 @@ global Renderer renderer;
 void renderer_initialize(void);
 void renderer_shutdown(void);
 void renderer_pre_update(void);
-void renderer_post_update(void);
+void renderer_post_update(RenderBatch *array, u32 count);
+
+void draw_line(RenderBatch *batch, v2f a, v2f b, v4f color);
+void draw_sprite(RenderBatch *batch, v2f pos, v2f size, v4f color, Sprite sprite);
+
+void renderer_reset_batch(RenderBatch *batch);
 
 /* =========================================================================
    FONTS / GLYPHS
@@ -174,12 +193,14 @@ typedef struct
 void renderer_create_line_pass(void);
 void renderer_create_sprite_pass(void);
 void renderer_create_resources(void);
-void renderer_produce_textured_vertices(TexturedVertex **vertices, u32 *count);
+void renderer_produce_vertices(RenderBatch *batch, 
+                               Array_T *lineVertices, 
+                               Array_T *texVertices);
 void renderer_update_line_pass(void);
 void renderer_update_sprite_pass(void);
 void renderer_free_passes(void);
 
-
+RenderCommand *renderer_push_command(RenderBatch *batch);
 
 
 
@@ -195,6 +216,37 @@ void renderer_free_passes(void);
    IMPLEMENTATION
    ========================================================================= */
 
+void draw_line(RenderBatch *batch, v2f a, v2f b, v4f color)
+{
+    RenderCommand *command = renderer_push_command(batch);
+    command->type = RenderCommandType_line;
+    command->line.a = a;
+    command->line.b = b;
+    command->line.color = color;
+}
+
+void draw_sprite(RenderBatch *batch, v2f pos, v2f size, v4f color, Sprite sprite)
+{
+    RenderCommand *command = renderer_push_command(batch);
+    command->type = RenderCommandType_sprite;
+    command->sprite.position = pos;
+    command->sprite.size = size;
+    command->sprite.color = color;
+    command->sprite.sprite = sprite;
+}
+
+void renderer_reset_batch(RenderBatch *batch)
+{
+    batch->command_index = 0;
+}
+
+RenderCommand *renderer_push_command(RenderBatch *batch)
+{
+    u32 index = batch->command_index++;
+    assert(narray(batch->commands) > index);
+    return batch->commands + index;
+}
+
 void renderer_pre_update(void)
 {
     MSG message;
@@ -208,8 +260,47 @@ void renderer_pre_update(void)
     renderer_update_sprite_pass();
 }
 
-void renderer_post_update(void)
+void renderer_post_update(RenderBatch *array, u32 count)
 {
+    /* For each batch */
+    for (u32 i=0; i < count; ++i)
+    {
+        RenderBatch *batch = array + i;
+        
+        Array_T lineVertices = Array_new(32, sizeof(LineVertex));
+        Array_T texVertices = Array_new(32, sizeof(TexturedVertex));
+        
+        /* Produce vertices */
+        renderer_produce_vertices(batch, &lineVertices, &texVertices);
+        
+        /* Get C arrays from Array_Ts */ 
+        s32 lineVertexCount = 0, texVertexCount = 0;
+        LineVertex     *lineVertexArray = 0;
+        TexturedVertex *texVertexArray = 0;
+        
+        Array_toarray(lineVertices, &lineVertexArray, &lineVertexCount);
+        Array_toarray(texVertices, &texVertexArray, &texVertexCount);
+        
+        /* Update vertex buffers */
+        xd11_buffer_update(renderer.pass_lines.vertex_buffers.array[0], 
+                           lineVertexArray, lineVertexCount*sizeof(LineVertex));
+        
+        xd11_buffer_update(renderer.pass_sprites.vertex_buffers.array[0], 
+                           texVertexArray, texVertexCount*sizeof(TexturedVertex));
+        
+        /* Execute render passes */
+        xd11_render_pass(&renderer.pass_lines, lineVertexCount);
+        xd11_render_pass(&renderer.pass_sprites, texVertexCount);
+        
+        /* Free C arrays and Array_Ts */
+        xfree(lineVertexArray);
+        Array_free(&lineVertices);
+        
+        xfree(texVertexArray);
+        Array_free(&texVertices);
+    }
+    
+    
     xd11_update();
     xwin_update(true, xd11.window_size);
 }
@@ -242,7 +333,7 @@ void renderer_initialize(void)
     
     /* Create render target view */
     renderer.target_view_count = 1;
-    renderer.target_views = xalloc(1*sizeof(xd11_tgvw));
+    renderer.target_views = xalloc(1*sizeof(xd11_tgv));
     renderer.target_views[0] = xd11_target_view(renderer.target_default.texture);
     
     /* Depth stencil */
@@ -435,7 +526,7 @@ void renderer_create_line_pass(void)
     
     /* Vertex shader constant buffers */
     renderer.pass_lines.vs_cbuffer_count = 1;
-    renderer.pass_lines.vs_cbuffers = xalloc(1*sizeof(xd11_buff));
+    renderer.pass_lines.vs_cbuffers = xalloc(1*sizeof(xd11_buf));
     
     renderer.pass_lines.vs_cbuffers[0] = xd11_buffer((D3D11_BUFFER_DESC)
                                                      {
@@ -449,14 +540,8 @@ void renderer_create_line_pass(void)
                                                      0);
     
     /* Pixel shader resources */
-    renderer.pass_lines.ps_resources = xalloc(1*sizeof(xd11_srvw));
-    renderer.pass_lines.ps_resources[0] = xd11_shader_res_view(renderer.texture_atlas.texture.handle,
-                                                               (D3D11_SHADER_RESOURCE_VIEW_DESC)
-                                                               {
-                                                                   DXGI_FORMAT_R8G8B8A8_UNORM,
-                                                                   D3D_SRV_DIMENSION_TEXTURE2D,
-                                                                   .Texture2D = (D3D11_TEX2D_SRV){0,1}
-                                                               });
+    renderer.pass_lines.ps_resource_count = 0;
+    renderer.pass_lines.ps_resources = 0;
     
     /* Topology */
     renderer.pass_lines.topology = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
@@ -567,7 +652,8 @@ void renderer_create_sprite_pass(void)
     renderer.pass_sprites.vertex_buffers.offsets[0] = 0;
     
     /* Vertex Shader Constant buffers */
-    renderer.pass_sprites.vs_cbuffers = xalloc(1*sizeof(xd11_buff));
+    renderer.pass_sprites.vs_cbuffer_count = 1;
+    renderer.pass_sprites.vs_cbuffers = xalloc(1*sizeof(xd11_buf));
     renderer.pass_sprites.vs_cbuffers[0] = xd11_buffer((XD11_BUFD)
                                                        {
                                                            sizeof(mat4f),
@@ -580,7 +666,8 @@ void renderer_create_sprite_pass(void)
                                                        0);
     
     /* Pixel Shader Resources */
-    renderer.pass_sprites.ps_resources = xalloc(1*sizeof(xd11_srvw));
+    renderer.pass_sprites.ps_resource_count = 1;
+    renderer.pass_sprites.ps_resources = xalloc(1*sizeof(xd11_srv));
     renderer.pass_sprites.ps_resources[0] = xd11_shader_res_view(renderer.texture_atlas.texture.handle,
                                                                  (D3D11_SHADER_RESOURCE_VIEW_DESC)
                                                                  {
@@ -623,7 +710,6 @@ void renderer_free_passes(void)
     xfree(renderer.pass_lines.vertex_buffers.strides);
     xfree(renderer.pass_lines.vertex_buffers.offsets);
     xfree(renderer.pass_lines.vs_cbuffers);
-    xfree(renderer.pass_lines.ps_resources);
     Array_free(&renderer.pass_lines.viewports);
     Array_free(&renderer.pass_lines.scissors);
     
@@ -640,26 +726,91 @@ void renderer_free_passes(void)
     xfree(renderer.target_views);
 }
 
-void renderer_produce_textured_vertices(TexturedVertex **vertices, u32 *count)
+void renderer_produce_vertices(RenderBatch *batch, 
+                               Array_T *lineVertices, 
+                               Array_T *texVertices)
 {
-    v2f p = xwin.mouse.pos;
-    
-    TexturedVertex data[6] =
+    for (u32 i=0; i < batch->command_index; ++i)
     {
-        {{    p.x,     p.y,  0}, {renderer.sprite_arrow.uv.min.x, renderer.sprite_arrow.uv.min.y}, {1,1,1,1}},
-        {{p.x+100,     p.y,  0}, {renderer.sprite_arrow.uv.max.x, renderer.sprite_arrow.uv.min.y}, {1,1,1,1}},
-        {{p.x+100, p.y+100,  0}, {renderer.sprite_arrow.uv.max.x, renderer.sprite_arrow.uv.max.y}, {1,1,1,1}},
-        
-        {{p.x+100, p.y+100,  0}, {renderer.sprite_arrow.uv.max.x, renderer.sprite_arrow.uv.max.y}, {1,1,1,1}},
-        {{    p.x, p.y+100,  0}, {renderer.sprite_arrow.uv.min.x, renderer.sprite_arrow.uv.max.y}, {1,1,1,1}},
-        {{    p.x,     p.y,  0}, {renderer.sprite_arrow.uv.min.x, renderer.sprite_arrow.uv.min.y}, {1,1,1,1}},
-    };
-    
-    // TODO: if there is any
-    *vertices = xalloc(6*sizeof(TexturedVertex));
-    
-    memcpy(*vertices, data, 6*sizeof(TexturedVertex));
-    *count = 6;
+        RenderCommand *c = batch->commands + i;
+        switch (c->type)
+        {
+            case RenderCommandType_line:
+            {
+                Array_push(lineVertices, 
+                           &(LineVertex){(v3f){c->line.a.x, c->line.a.y, 0}, c->line.color});
+                Array_push(lineVertices, 
+                           &(LineVertex){(v3f){c->line.b.x, c->line.b.y, 0}, c->line.color});
+            } break;
+            
+            case RenderCommandType_rect:
+            {
+                
+            } break;
+            
+            case RenderCommandType_sprite:
+            {
+                v2f pos = c->sprite.position;
+                v2f size = c->sprite.size;
+                rect2f uv = c->sprite.sprite.uv;
+                /* Upper triangle */
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x, pos.y, 0}, 
+                               (v2f){uv.min.x, uv.max.y},
+                               c->sprite.color
+                           });
+                
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x + size.x, pos.y, 0}, 
+                               (v2f){uv.max.x, uv.max.y},
+                               c->sprite.color
+                           });
+                
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x + size.x, pos.y + size.y, 0}, 
+                               (v2f){uv.max.x, uv.min.y},
+                               c->sprite.color
+                           });
+                
+                /* Lower triangle */
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x, pos.y, 0}, 
+                               (v2f){uv.min.x, uv.max.y},
+                               c->sprite.color
+                           });
+                
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x + size.x, pos.y + size.y, 0}, 
+                               (v2f){uv.max.x, uv.min.y},
+                               c->sprite.color
+                           });
+                
+                
+                Array_push(texVertices, 
+                           &(TexturedVertex)
+                           {
+                               (v3f){pos.x, pos.y + size.y, 0}, 
+                               (v2f){uv.min.x, uv.min.y},
+                               c->sprite.color
+                           });
+            } break;
+            
+            default:
+            {
+                assert(!"Should not happen!");
+            } break;
+        }
+    }
 }
 
 void renderer_update_line_pass(void)
@@ -673,7 +824,7 @@ void renderer_update_line_pass(void)
     };
     
     /* Update constant buffers */
-    xd11_buff cbuffer = renderer.pass_lines.vs_cbuffers[0];
+    xd11_buf cbuffer = renderer.pass_lines.vs_cbuffers[0];
     xd11_update_subres(cbuffer, &matrixProjection);
     
     /* Set render target */
@@ -695,9 +846,6 @@ void renderer_update_line_pass(void)
         {{0,0,0}, {1,1,1,1}},
         {{xd11.back_buffer_size.x,xd11.back_buffer_size.y,0}, {1,1,1,1}},
     };
-    
-    xd11_buffer_update(renderer.pass_lines.vertex_buffers.array[0], data, 2*sizeof(LineVertex));
-    xd11_render_pass(&renderer.pass_lines, 2);
 }
 
 void renderer_update_sprite_pass(void)
@@ -718,16 +866,6 @@ void renderer_update_sprite_pass(void)
     
     Array_set(renderer.pass_sprites.scissors, 0,
               &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
-    
-    u32 vertexCount = 0;
-    TexturedVertex *vertices = 0;
-    renderer_produce_textured_vertices(&vertices, &vertexCount);
-    
-    if (vertexCount > 0)
-        xfree(vertices);
-    
-    xd11_buffer_update(renderer.pass_sprites.vertex_buffers.array[0], vertices, vertexCount*sizeof(TexturedVertex));
-    xd11_render_pass(&renderer.pass_sprites, vertexCount);
 }
 
 LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -748,7 +886,7 @@ void xd11_resized(void)
 {
     /* Release target views */
     for (u32 i=0; i<renderer.target_view_count; ++i)
-        ID3D11RenderTargetView_Release((xd11_tgvw)renderer.target_views[i]);
+        ID3D11RenderTargetView_Release((xd11_tgv)renderer.target_views[i]);
     
     /* Default Target Depth Stencil Texture and View */
     ID3D11DepthStencilView_Release(renderer.target_default.depth_stencil.view);
