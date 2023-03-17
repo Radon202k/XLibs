@@ -477,7 +477,7 @@ inline v2f ini2fs(s32 x, s32 y)
 
 inline v2f *new2f(f32 x, f32 y)
 {
-    v2f *r = (v2f *)xalloc(sizeof *r);
+    v2f *r = xalloc(sizeof *r);
     *r = (v2f){x,y};
     return r;
 }

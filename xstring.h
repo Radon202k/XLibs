@@ -11,7 +11,7 @@ void xstrcpy(T *dest, u32 destsize, T *src);
 void xstrcps(T *dest, u32 destsize, T *src, u32 size);
 bool xstreql(T *stra, T *strb);
 s32  xstrlen(T *str);
-void xstrapd(T *dest, u32 destsize, T *b);
+void xstrcat(T *dest, u32 destsize, T *b);
 T   *xstrint(int v);
 T   *xstrdbl(double value);
 
@@ -61,7 +61,7 @@ s32 xstrlen(T *s)
     return (u32)wcslen(s);
 }
 
-void xstrapd(T *dest, u32 destSize, T *b)
+void xstrcat(T *dest, u32 destSize, T *b)
 {
     wcscat_s(dest, destSize, b);
 }

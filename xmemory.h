@@ -6,11 +6,14 @@
 void xmemcheck(void);
 
 #define xfree(ptr) safe_free(ptr, __FILE__, __LINE__)
-#define xalloc(size) safe_alloc(size, __FILE__, __LINE__)
+#define xalloc(Size) safe_alloc(Size, __FILE__, __LINE__)
 #define xnalloc(count, type) (type *)safe_alloc((count)*sizeof(type), __FILE__, __LINE__)
 
 #define xcopy(dst, src, size) safe_copy(dst, src, size)
 #define xncopy(dst, src, count, type) safe_copy(dst, src, (count)*sizeof(type))
+
+#define xclear(dst, size) safe_clear(dst, size)
+#define xnclear(dst, count, type) safe_clear(dst, (count)*sizeof(type))
 
 #define XMAX_SAFE_ALLOC 2048
 

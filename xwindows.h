@@ -64,10 +64,11 @@ typedef struct
 
 typedef struct
 {
-    s32 ice;
+    bool input_char_entered;
+    wchar_t input_char;
+    
     XKeys key;
     XMouse mouse;
-    wchar_t ic;
     HWND wh;
     HCURSOR ch;
     u64 pf;
@@ -162,8 +163,8 @@ void xwin_update(bool topdown, v2f windim)
     xwin.mouse.wheel = 0;
     
     // Clear the input char
-    xwin.ic = 0;
-    xwin.ice = false;
+    xwin.input_char = 0;
+    xwin.input_char_entered = false;
 }
 
 #define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, \
@@ -180,8 +181,8 @@ case WM_CLOSE: {        \
 xd11.running = false;    \
 } break;                \
 case WM_CHAR: {                 \
-xwin.ic = (wchar_t)wParam;   \
-xwin.ice = true;             \
+xwin.input_char = (wchar_t)wParam;   \
+xwin.input_char_entered = true;             \
 } break;                        \
 case WM_MOUSEWHEEL: {                                                               \
 xwin.mouse.wheel = ((f32)GET_WHEEL_DELTA_WPARAM(wParam) / (f32)WHEEL_DELTA);     \

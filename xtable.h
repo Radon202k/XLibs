@@ -9,8 +9,8 @@
 typedef struct T * T;
 typedef struct T_node * T_node;
 
-T Table_new (s32 size, bool cmp(void *a, void *b), u32 hash(void *key));
-void Table_free (T table);
+T     Table_new (s32 size, bool cmp(void *a, void *b), u32 hash(void *key));
+void  Table_free (T table);
 
 void  Table_set (T table, void *key, void *value);
 void *Table_get (T table, void *key);
@@ -52,7 +52,7 @@ struct T
 T Table_new(s32 sz,	bool cmp(void *a, void *b),	u32 hash(void *k))
 {
 	T r;
-
+    
 	r=xalloc(sizeof *r);
 	r->size=sz;
 	r->storage=xnalloc(sz, T_node);
@@ -65,14 +65,14 @@ void Table_free(T t)
 {
 	s32 i;
 	Table_node m, n;
-
+    
 	for (i=0; i<t->size; ++i)
 		for (m=t->storage[i]; m; m=n)
-		{
-			n=m->next;
-			xfree(m);
-		}
-
+    {
+        n=m->next;
+        xfree(m);
+    }
+    
 	xfree(t->storage);
 	xfree(t);
 }
@@ -81,7 +81,7 @@ void Table_set(T t, void *k, void *v)
 {
 	u32 h;
 	T_node i;
-
+    
 	h=t->hash(k);
 	i=xalloc(sizeof *i);
 	i->key=k;
@@ -94,11 +94,11 @@ void *Table_get(T t, void *k)
 {
 	u32 h;
 	T_node i;
-
+    
 	h=t->hash(k);
 	for (i=t->storage[h]; i; i=i->next)
 		if (t->cmp(i->key, k))
-			break;
+        break;
 	if (i)
 		return i->value;
 	else
@@ -109,7 +109,7 @@ void Table_del(T t, void *k)
 {
 	u32 h;
 	T_node *p, n, l;
-
+    
 	l=0;
 	h=t->hash(k);
 	for (p=t->storage+h; *p; )
