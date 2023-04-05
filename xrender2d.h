@@ -89,6 +89,84 @@ typedef struct
     v2f align;
 } XSprite;
 
+typedef struct XGlyphHashNode
+{
+    wchar_t key;
+    XSprite *value;
+    struct XGlyphHashNode *next;
+    
+} XGlyphHashNode;
+
+#define XGLYPH_HASH_LENGTH 512
+
+typedef struct
+{
+    XGlyphHashNode *storage[XGLYPH_HASH_LENGTH];
+    
+} XGlyphHashTable;
+
+u32 xglyph_hash(wchar_t unicode)
+{
+    // TODO: Better hash function !!
+    u32 result = unicode & (XGLYPH_HASH_LENGTH-1);
+    return result;
+}
+
+XSprite *
+xglyph_get(XGlyphHashTable *table, wchar_t key)
+{
+    u32 hash = xglyph_hash(key);
+    assert(hash < XGLYPH_HASH_LENGTH);
+    
+    /* Search for a node with the same key */
+    XGlyphHashNode *found = 0, *at = table->storage[hash];
+    
+    while (at)
+    {
+        if (at->key == key)
+        {
+            found = at;
+            break;
+        }
+        
+        at = at->next;
+    }
+    
+    if (found)
+        return found->value;
+    else
+        return 0;
+}
+
+void
+xglyph_set(XGlyphHashTable *table, wchar_t key, XSprite *value)
+{
+    u32 hash = xglyph_hash(key);
+    assert(hash < XGLYPH_HASH_LENGTH);
+    
+    /* Make a new node */
+    XGlyphHashNode *new_node = xalloc(sizeof *new_node);
+    new_node->key = key;
+    new_node->value = value;
+    
+    /* Search for a node with the same key */
+    XGlyphHashNode *found = 0, *at = table->storage[hash];
+    
+    while (at)
+    {
+        if (at->key == key)
+        {
+            found = at;
+            break;
+        }
+        
+        at = at->next;
+    }
+    
+    new_node->next = table->storage[hash];
+    table->storage[hash] = new_node;
+}
+
 typedef struct
 {
     f32 lineadvance, charwidth, maxdescent;
@@ -97,7 +175,7 @@ typedef struct
     HBITMAP bitmap;
     TEXTMETRICW metrics;
     VOID *bytes;
-    Table_T glyphs;
+    XGlyphHashTable glyphs;
 } XFont;
 
 typedef struct
@@ -169,6 +247,8 @@ typedef struct
     /* Core variables */
     XRenderTarget target_default;
     
+    v4f clear_color;
+    
     u32 target_view_count;
     xd11_tgv *target_views;
     
@@ -187,15 +267,17 @@ LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 global XRender2D xrender2d;
 
-void xrender2d_initialize (void);
+void xrender2d_initialize (v4f clear_color);
 void xrender2d_shutdown   (void);
 void xrender2d_pre_update (void);
 void xrender2d_post_update(XRenderBatch *array, u32 count);
 
 void draw_line  (XRenderBatch *batch, v2f a,   v2f b,    v4f color);
+void draw_arrow (XRenderBatch *batch, v2f a,   v2f b,    v4f color, f32 head_size);
 void draw_rect  (XRenderBatch *batch, v2f pos, v2f size, v4f color);
 void draw_sprite(XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite sprite);
 void draw_text  (XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text);
+void draw_grid  (XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color);
 
 void xrender2d_reset_batch(XRenderBatch *batch);
 
@@ -204,7 +286,7 @@ void xrender2d_reset_batch(XRenderBatch *batch);
    ========================================================================= */
 
 XFont    xrender2d_font (XTextureAtlas *a, wchar_t *path, wchar_t *name, int heightpoints);
-XSprite  xrender2d_glyph_from_char (XTextureAtlas *a, XFont font, wchar_t *c, rect2f *tBounds, s32 *tDescent);
+XSprite  xrender2d_font_glyph (XTextureAtlas *a, XFont font, wchar_t c, rect2f *tBounds, s32 *tDescent);
 void     xrender2d_font_free   (XFont font);
 s32      xrender2d_font_height (s32 pointHeight);
 
@@ -226,9 +308,6 @@ u8 *     xrender2d_load_png(wchar_t *path, v2i *dim, bool premulAlpha);
 
 XSprite   xrender2d_sprite_from_png  (XTextureAtlas *atlas, wchar_t *path, bool premulalpha);
 XSprite   xrender2d_sprite_from_bytes(XTextureAtlas *atlas, u8 *b, v2i dim);
-
-u32      xrender2d_hash_unicode(const void *k);
-bool     xrender2d_cmp_glyph_unicodes(const void *a, const void *b);
 
 s32      xrender2d_font_height(s32 pointHeight);
 void     xrender2d_font_free(XFont f);
@@ -396,6 +475,24 @@ void draw_line(XRenderBatch *batch, v2f a, v2f b, v4f color)
     command->line.color = color;
 }
 
+void draw_arrow(XRenderBatch *batch, v2f a, v2f b, v4f color, f32 head_size)
+{
+    if (a.x != b.x || a.y != b.y)
+    {
+        draw_line(batch, a, b, color);
+        
+        v2f dir = nrm2f(sub2f(b, a));
+        v2f normal = {-dir.y, dir.x};
+        
+        v2f back = sub2f(b, mul2f(head_size, dir));
+        v2f head_a = add2f(back, mul2f(+head_size, normal));
+        v2f head_b = add2f(back, mul2f(-head_size, normal));
+        
+        draw_line(batch, b, head_a, color);
+        draw_line(batch, b, head_b, color);
+    }
+}
+
 void draw_rect(XRenderBatch *batch, v2f pos, v2f size, v4f color)
 {
     XRenderCommand *command = xrender2d_push_command(batch);
@@ -422,11 +519,32 @@ void draw_text(XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *te
     command->text.position = pos;
     command->text.color = color;
     command->text.font = font;
-    u32 len = xstrlen(text);
-    command->text.length = len;
-    command->text.text = xalloc(len*sizeof(wchar_t) + 1);
-    xcopy(command->text.text, text, len*sizeof(wchar_t));
-    command->text.text[len] = 0;
+    command->text.length = xstrlen(text);
+    command->text.text = xstrnew(text);
+}
+
+void draw_grid(XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color)
+{
+    v2i grid_horizontal_line_count = 
+    {
+        (s32)ceilf(xd11.back_buffer_size.x / gap.x),
+        (s32)ceilf(xd11.back_buffer_size.y / gap.y),
+    };
+    
+    /* Draw vertical lines */
+    for (s32 x=0; x<grid_horizontal_line_count.x; ++x)
+        draw_rect(batch, 
+                  (v2f){x*gap.x, 0}, 
+                  (v2f){line_thickness.x, xd11.back_buffer_size.y}, 
+                  color);
+    
+    /* Draw horizontal lines */
+    for (s32 y=0; y<grid_horizontal_line_count.y; ++y)
+        draw_rect(batch, 
+                  (v2f){0, y*gap.y}, 
+                  (v2f){xd11.back_buffer_size.x, line_thickness.y}, 
+                  color);
+    
 }
 
 void xrender2d_reset_batch(XRenderBatch *batch)
@@ -514,8 +632,10 @@ void xrender2d_depth_stencil(XD11DepthStencil *depth_stencil,
     depth_stencil->state = xd11_depth_stencil_state(desc_state);
 }
 
-void xrender2d_initialize(void)
+void xrender2d_initialize(v4f clear_color)
 {
+    xrender2d.clear_color = clear_color;
+    
     /* Get back buffer texture from swap chain */    
     xrender2d.target_default.texture = xd11_swapchain_get_buffer();
     
@@ -564,7 +684,7 @@ void xrender2d_initialize(void)
     
     /* Texture atlas texture */
     {
-        u32 atlas_size = 1024;
+        u32 atlas_size = 2048;
         u32 bytes_size = atlas_size*atlas_size*4;
         
         /* Create D3D11 texture */
@@ -793,6 +913,7 @@ void xrender2d_create_sprite_pass(void)
     /* Rasterizer state */
     xrender2d.pass_sprites.rasterizer_state = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
                                                                     {
+                                                                        // D3D11_FILL_WIREFRAME,
                                                                         D3D11_FILL_SOLID, 
                                                                         D3D11_CULL_BACK, 
                                                                         false,
@@ -882,6 +1003,8 @@ void xrender2d_create_resources(void)
     /* Create resources */
     v2i white_dim;
     u8 *white_bytes = xrender2d_load_png(L"images/white.png", &white_dim, false);
+    if (!white_bytes)
+        assert(!"Need to have a white.png in images directory!");
     xrender2d.sprite_white = xrender2d_sprite_from_bytes(&xrender2d.texture_atlas, white_bytes, white_dim);
     xfree(white_bytes);
     
@@ -979,14 +1102,17 @@ void xrender2d_produce_vertices(XRenderBatch *batch,
                 wchar_t *at = c->text.text;
                 while (*at != 0)
                 {
-                    u32 key = *at;
-                    XSprite *sprite = Table_get(c->text.font->glyphs, &key);
+                    XSprite *sprite = xglyph_get(&c->text.font->glyphs, *at);
                     if (sprite)
                     {
                         v2f size = sprite->size;
                         rect2f uv = sprite->uv;
-                        xrender2d_push_rect_vertices(texVertices, pos, size, uv, color);
-                        pos.x += size.x;
+                        
+                        v2f glyph_pos = sub2f(pos, sprite->align);
+                        
+                        xrender2d_push_rect_vertices(texVertices, glyph_pos, size, uv, color);
+                        
+                        pos.x += size.x + sprite->align.x;
                     }
                     
                     ++at;
@@ -1022,7 +1148,7 @@ void xrender2d_update_line_pass(void)
     xd11_set_render_target(xrender2d.pass_lines.target_view, xrender2d.pass_lines.depth_stencil.view);
     
     /* Clear */
-    xd11_clear_rtv(xrender2d.pass_lines.target_view, eme4f);
+    xd11_clear_rtv(xrender2d.pass_lines.target_view, xrender2d.clear_color);
     xd11_clear_dsv(xrender2d.pass_lines.depth_stencil.view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
     
     /* Update viewport and scissor rect*/
@@ -1255,25 +1381,6 @@ XSprite xrender2d_sprite_from_png(XTextureAtlas *a, wchar_t *path, bool premulal
     return r;
 }
 
-
-bool xrender2d_cmp_glyph_unicodes(const void *a, const void *b)
-{
-    u32 ua, ub;
-    
-    ua = *(u32 *)a;
-    ub = *(u32 *)b;
-    return (ua == ub);
-}
-
-u32 xrender2d_hash_unicode(const void *k)
-{
-    u32 u;
-    
-    u = *(u32 *)k;
-    u = (u & (512-1));
-    return u;
-}
-
 XFont xrender2d_font(XTextureAtlas *atlas, wchar_t *path, wchar_t *name, int heightpoints)
 {
     XFont result;
@@ -1284,9 +1391,8 @@ XFont xrender2d_font(XTextureAtlas *atlas, wchar_t *path, wchar_t *name, int hei
     
     s32 i;
     
-    wchar_t c[2];
-    u32 *k;
-    XSprite *v;
+    wchar_t c;
+    XSprite *v = 0;
     
     /* Add font resource to Windows */
     s32 temp = AddFontResourceW(path);
@@ -1319,33 +1425,30 @@ XFont xrender2d_font(XTextureAtlas *atlas, wchar_t *path, wchar_t *name, int hei
     GetTextMetricsW(xd11.glyph_maker_dc, &metrics);
     result.metrics = metrics;
     result.lineadvance = (f32)metrics.tmHeight - metrics.tmInternalLeading;
+    /* Use this if nothing else, but search for better value later */
     result.charwidth = (f32)metrics.tmAveCharWidth;
-    result.glyphs = Table_new(512, xrender2d_cmp_glyph_unicodes, xrender2d_hash_unicode);
     
     /* D11 some glyphs from the ASCII range */
     maxGlyphSize.x = maxGlyphSize.y = maxDescent = -10000;
     for (i=32; i<=126; ++i)
     {
-        c[0]=(wchar_t)i;
-        c[1]='\0';
-        
-        /* Allocate memory for the hash table key/value pair */
-        k = xalloc(sizeof *k);
-        v = xalloc(sizeof *v);
-        
-        /* Store key, generate the glyph sprite and store value */
-        *k = (u32)i;
+        c=(wchar_t)i;
         
         rect2f tightBounds;
         s32 tightDescent;
-        *v = xrender2d_glyph_from_char(atlas, result, c, &tightBounds, &tightDescent);
+        
+        v = xalloc(sizeof *v);
+        *v = xrender2d_font_glyph(atlas, result, c, &tightBounds, &tightDescent);
         
         /* Spaces wont have anything so tightBounds wont be found  */
         if (tightBounds.max.x!=0 && tightBounds.max.y!=0)
         {
             /* Calculate tight size */
-            v2i tightSize = (v2i){(s32)(tightBounds.max.x - tightBounds.min.x),
-                (s32)(tightBounds.max.y - tightBounds.min.y)};
+            v2i tightSize =
+            {
+                (s32)(tightBounds.max.x - tightBounds.min.x),
+                (s32)(tightBounds.max.y - tightBounds.min.y)
+            };
             
             /* Book keep maximum glyph size and maximum descent */
             if (maxGlyphSize.x < tightSize.x) maxGlyphSize.x = tightSize.x;
@@ -1354,37 +1457,43 @@ XFont xrender2d_font(XTextureAtlas *atlas, wchar_t *path, wchar_t *name, int hei
         }
         
         /* Set the glyph in the hash table */
-        Table_set(result.glyphs, k, v);
+        xglyph_set(&result.glyphs, c, v);
     }
     
     result.lineadvance = (f32)maxGlyphSize.y;
+    if (maxGlyphSize.x > 0)
+        result.charwidth = (f32)maxGlyphSize.x;
+    
     result.maxdescent = (f32)maxDescent;
     xstrcpy(result.path, MAX_PATH, path);
     
     return result;
 }
 
-XSprite xrender2d_glyph_from_char(XTextureAtlas *atlas, XFont font, wchar_t *c, 
-                                  rect2f *tBounds, s32 *tDescent)
+XSprite xrender2d_font_glyph(XTextureAtlas *atlas, XFont font, wchar_t c, 
+                             rect2f *tBounds, s32 *tDescent)
 {
-    u8 *b, *dstRow, *srcRow;
+    u8 *bytes, *dstRow, *srcRow;
     s32 charsz, i,j, x,y;
-    u32 *dstPx, *srcPx, *px, color, a, ps;
-    v2f d, al;
+    u32 *dstPx, *srcPx, *px, color, a, pre_step;
+    v2f dim, align;
     XSprite r;
     SIZE size;
     rect2f bounds;
     
-    ps=(s32)(0.3f*font.lineadvance);
-    GetTextExtentPoint32W(xd11.glyph_maker_dc, c, 1, &size);
-    al = (v2f){0,0};
-    d = ini2fs(size.cx,size.cy);
-    charsz=(s32)wcslen(c);
-    bounds = inir2f(0,0, d.x,d.y);
+    wchar_t full_char[2] = {c, 0};
+    
+    pre_step = (s32)(0.3f*font.lineadvance);
+    
+    GetTextExtentPoint32W(xd11.glyph_maker_dc, full_char, 1, &size);
+    align = (v2f){0,0};
+    dim = ini2fs(size.cx,size.cy);
+    charsz=(s32)wcslen(full_char);
+    bounds = inir2f(0,0, dim.x, dim.y);
     tBounds->min.x=tBounds->min.y=1000000;
     tBounds->max.x=tBounds->max.y=-1000000;
     
-    TextOutW(xd11.glyph_maker_dc, ps,0, c, charsz);
+    TextOutW(xd11.glyph_maker_dc, pre_step,0, full_char, charsz);
     
     bool foundTBox = false;
     for (j=0; j<xd11.glyph_maker_size; ++j)
@@ -1409,18 +1518,18 @@ XSprite xrender2d_glyph_from_char(XTextureAtlas *atlas, XFont font, wchar_t *c,
         ++tBounds->max.x;
         ++tBounds->max.y;
         
-        d.x=tBounds->max.x-tBounds->min.x+1;
-        d.y=tBounds->max.y-tBounds->min.y+1;
+        dim.x = tBounds->max.x-tBounds->min.x+1;
+        dim.y = tBounds->max.y-tBounds->min.y+1;
         
         *tDescent = font.metrics.tmDescent-(font.metrics.tmHeight-(s32)tBounds->max.y);
-        al.x = tBounds->min.x-ps;
-        al.y = (f32)*tDescent;
+        align.x = tBounds->min.x - pre_step;
+        align.y = (f32)font.metrics.tmAscent-tBounds->min.y-font.metrics.tmHeight/2;
     }
     
-    b = (u8 *)xalloc((s32)(d.x*d.y)*4);
+    bytes = (u8 *)xalloc((s32)(dim.x*dim.y)*4);
     
     if (foundTBox) {
-        dstRow = b;
+        dstRow = bytes;
         srcRow = ((u8 *)font.bytes + (s32)tBounds->min.y*xd11.glyph_maker_size*4 + (s32)tBounds->min.x*4);
         for (y=(s32)tBounds->min.y; y<(s32)tBounds->max.y; ++y)
         {
@@ -1432,14 +1541,14 @@ XSprite xrender2d_glyph_from_char(XTextureAtlas *atlas, XFont font, wchar_t *c,
                 a = ((color >> 16) & 0xff);
                 *dstPx++ =  RGBA(255,255,255, a);
             }
-            dstRow += 4*(s32)d.x;
+            dstRow += 4*(s32)dim.x;
             srcRow += 4*xd11.glyph_maker_size;
         }
     }
     
-    r = xrender2d_sprite_from_bytes(atlas, b, ini2if(d.x,d.y));
-    r.align = al;
-    xfree(b);
+    r = xrender2d_sprite_from_bytes(atlas, bytes, ini2if(dim.x,dim.y));
+    r.align = align;
+    xfree(bytes);
     return r;
 }
 
@@ -1454,21 +1563,18 @@ s32 xrender2d_font_height(s32 pointHeight)
 void xrender2d_font_free(XFont f)
 {
     s32 i;
-    Table_node n;
+    XGlyphHashNode *n;
     
     DeleteObject(f.bitmap);
     DeleteObject(f.handle);
     RemoveFontResourceW(f.path);
     
-    for (i=0; i<f.glyphs->size; ++i)
-        for (n=f.glyphs->storage[i]; n; n=n->next)
+    for (i=0; i<XGLYPH_HASH_LENGTH; ++i)
+        for (n=f.glyphs.storage[i]; n; n=n->next)
     {
-        xfree(n->key);
+        xfree(n);
         xfree(n->value);
     }
-    
-    Table_free(f.glyphs);
 }
-
 
 #endif

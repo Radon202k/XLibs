@@ -1,11 +1,11 @@
 #ifndef XLIB_MATH
 #define XLIB_MATH
 
-/*  i: int
+/*
+i: int
     f: float
-    d2r: degrees to radians
-    r2d: radians to degrees
-    ini: init
+    rad: radians
+    deg: degrees
     new: allocation
     add: addition
     sub: subtraction
@@ -18,6 +18,104 @@
     lsq: length squared
 
     Ex.: add2f: vector add 2 floats */
+
+/* =========================================================================
+    COLORS
+   ========================================================================= */
+
+/* blu4f: blue
+   sap4f: sapphire
+   cob4f: cobalt blue
+   cer4f: cerulean (a light blue)
+   azu4f: azure (a light blue)
+   ind4f: indigo (a deep blue-purple)
+   tur4f: turquoise (a blue-green) */
+
+/* red4f: red
+   cri4f: crimson (a deep red)
+   rub4f: ruby (a deep red)
+   sca4f: scarlet (a bright red)
+   ver4f: vermilion (a bright red-orange) */
+
+/* gre4f: green
+   eme4f: emerald green
+   jad4f: jade green
+   oli4f: olive green
+   lim4f: lime green */
+
+/* yel4f: yellow
+   gol4f: gold (a yellow-orange)
+   amb4f: amber (a yellow-orange)
+   lem4f: lemon yellow
+   mus4f: mustard yellow */
+
+
+/* =========================================================================
+   DATA TYPES
+   ========================================================================= */
+
+typedef union v2f
+{
+    f32 e[2];
+    struct { f32 x; f32 y; };
+} v2f;
+
+typedef union v2i
+{
+    s32 e[2];
+    struct { s32 x; s32 y; };
+} v2i;
+
+typedef union v3f
+{
+    f32 e[3];
+    struct { f32 x; f32 y; f32 z; };
+    struct { v2f xy; f32 ignored0; };
+} v3f;
+
+typedef union v3i
+{
+    s32 e[3];
+    struct { s32 x; s32 y; s32 z; };
+    struct { v2i xy; s32 ignored0; };
+} v3i;
+
+typedef union v4f
+{
+    f32 e[4];
+    struct { f32 x; f32 y; f32 z; f32 w; };
+    struct { f32 r; f32 g; f32 b; f32 a; };
+} v4f;
+
+typedef union v4i
+{
+    s32 e[4];
+    struct { s32 x; s32 y; s32 z; s32 w; };
+    struct { s32 r; s32 g; s32 b; s32 a; };
+} v4i;
+
+typedef struct rect2f
+{
+    v2f min;
+    v2f max;
+} rect2f;
+
+typedef struct mat4f
+{
+    f32 data[4][4];
+} mat4f;
+
+typedef struct circlef
+{
+    v2f center;
+    f32 radius;
+} circlef;
+
+typedef struct ngonf
+{
+    s32 n;
+    v2f *vertices;
+} ngonf;
 
 #include "xmemory.h"
 
@@ -36,25 +134,19 @@ s32 rndi(s32 a, s32 b);
 
 f32 mapf(f32 a1, f32 a2, f32 s, f32 b1, f32 b2);
 f32 lrpf(f32 a, f32 t, f32 b);
-f32 rndf(f32 a, f32 b);
 f32 radf(f32 deg);
 f32 degf(f32 rad);
 
 /* =========================================================================
-   VECTOR 2 FLOAT
+   RANDOM
    ========================================================================= */
 
-typedef union v2f v2f;
+f32 rndf(f32 a, f32 b);
+void random_seed(u32 seed);
 
-union v2f
-{
-    f32 e[2];
-    struct
-    {
-        f32 x;
-        f32 y;
-    };
-};
+/* =========================================================================
+   VECTOR 2 FLOAT
+   ========================================================================= */
 
 v2f  bez2f (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v2f  lrp2f (v2f a, f32 t, v2f b);
@@ -74,93 +166,9 @@ v2f  rot2f (v2f v, f32 a);
 void padd2f(v2f *d, v2f v);
 void psub2f(v2f *d, v2f v);
 
-
-typedef struct
-{
-    v2f center;
-    f32 radius;
-} Circlef;
-
-typedef struct
-{
-    s32 n;
-    v2f *vertices;
-} ConvexPolygonf;
-
-bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection)
-{
-    v2f r = { p2.x - p1.x, p2.y - p1.y };
-    v2f s = { q2.x - q1.x, q2.y - q1.y };
-    float rxs = r.x * s.y - r.y * s.x;
-    v2f qp = { q1.x - p1.x, q1.y - p1.y };
-    float t = (qp.x * s.y - qp.y * s.x) / rxs;
-    float u = (qp.x * r.y - qp.y * r.x) / rxs;
-    if (rxs == 0 || t < 0 || t > 1 || u < 0 || u > 1)
-        return false; // No intersection
-    else {
-        intersection->x = p1.x + t * r.x;
-        intersection->y = p1.y + t * r.y;
-        return true; // Intersection found
-    }
-}
-
-bool circlef_vs_circlef(Circlef A, Circlef B)
-{
-    f32 distsq = lsq2f(sub2f(B.center, A.center));
-    
-    f32 radii = A.radius + B.radius;
-    f32 radiisq = radii * radii;
-    
-    return (distsq < radiisq);
-}
-
-f32 circlef_vs_circlef_dist(Circlef A, Circlef B)
-{
-    return maxf(A.radius + B.radius - len2f(sub2f(A.center, B.center)), 0);
-}
-
-void circlef_vs_circlef_witness(Circlef A, Circlef B, v2f *p1, v2f *p2)
-{
-    v2f v = nrm2f(sub2f(A.center, B.center));
-    *p1 = sub2f(A.center, mul2f(A.radius, v));
-    *p2 = add2f(B.center, mul2f(B.radius, v));
-}
-
-bool circlef_vs_ngonf(Circlef circle, ConvexPolygonf polygon)
-{
-    // Cast a ray from the center of the circle to the right
-    v2f ray_origin = circle.center;
-    v2f ray_direction = { 1.0f, 0.0f };
-    v2f ray_endpoint = { ray_origin.x + 2.0f * circle.radius, ray_origin.y };
-    
-    int num_intersections = 0;
-    // Check if the ray intersects with any of the polygon edges
-    for (int i = 0; i < polygon.n; i++) {
-        v2f edge_start = polygon.vertices[i];
-        v2f edge_end = polygon.vertices[(i + 1) % polygon.n];
-        v2f intersection_point;
-        if (line_vs_line(ray_origin, ray_endpoint, edge_start, edge_end, &intersection_point))
-            num_intersections++;
-    }
-    
-    return (num_intersections % 2 == 1);
-}
-
 /* =========================================================================
    VECTOR 2 INT
    ========================================================================= */
-
-typedef union v2i v2i;
-
-union v2i
-{
-    s32 e[2];
-    struct
-    {
-        s32 x;
-        s32 y;
-    };
-};
 
 v2i  bez2i (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v2i  lrp2i (v2i a, f32 t, v2i b);
@@ -182,24 +190,6 @@ void psub2i(v2i *d, v2i v);
    VECTOR 3 FLOAT
    ========================================================================= */
 
-typedef union v3f v3f;
-
-union v3f
-{
-    f32 e[3];
-    struct
-    {
-        f32 x;
-        f32 y;
-        f32 z;
-    };
-    struct
-    {
-        v2f xy;
-        f32 ignored0;
-    };
-};
-
 v3f  bez3f (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v3f  lrp3f (v3f a, f32 t, v3f b);
 v3f *new3f (f32 x, f32 y, f32 z);
@@ -218,24 +208,6 @@ void psub3f(v3f *d, v3f v);
    VECTOR 3 INT
    ========================================================================= */
 
-typedef union v3i v3i;
-
-union v3i
-{
-    s32 e[3];
-    struct
-    {
-        s32 x;
-        s32 y;
-        s32 z;
-    };
-    struct
-    {
-        v2i xy;
-        s32 ignored0;
-    };
-};
-
 v3i  bez3i (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v3i  lrp3i (v3i a, f32 t, v3i b);
 v3i *new3i (s32 x, s32 y);
@@ -253,27 +225,6 @@ void psub3i(v3i *d, v3i v);
 /* =========================================================================
    VECTOR 4 FLOAT
    ========================================================================= */
-
-typedef union v4f v4f;
-
-union v4f
-{
-    f32 e[4];
-    struct
-    {
-        f32 x;
-        f32 y;
-        f32 z;
-        f32 w;
-    };
-    struct
-    {
-        f32 r;
-        f32 g;
-        f32 b;
-        f32 a;
-    };
-};
 
 v4f  bez4f (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v4f  lrp4f (v4f a, f32 t, v4f b);
@@ -295,14 +246,6 @@ void psub4f(v4f *d, v4f v);
    BLUES
    ========================================================================= */
 
-/* blu4f: blue
-   sap4f: sapphire
-   cob4f: cobalt blue
-   cer4f: cerulean (a light blue)
-   azu4f: azure (a light blue)
-   ind4f: indigo (a deep blue-purple)
-   tur4f: turquoise (a blue-green) */
-
 #define blu4f ini4f(0.00f, 0.00f, 1.00f, 1.00f)
 #define sap4f ini4f(0.06f, 0.32f, 0.73f, 1.00f)
 #define cob4f ini4f(0.00f, 0.28f, 0.67f, 1.00f)
@@ -315,12 +258,6 @@ void psub4f(v4f *d, v4f v);
    REDS
    ========================================================================= */
 
-/* red4f: red
-   cri4f: crimson (a deep red)
-   rub4f: ruby (a deep red)
-   sca4f: scarlet (a bright red)
-   ver4f: vermilion (a bright red-orange) */
-
 #define red4f ini4f(1.00f, 0.00f, 0.00f, 1.00f)
 #define cri4f ini4f(0.86f, 0.08f, 0.24f, 1.00f)
 #define rub4f ini4f(0.88f, 0.07f, 0.37f, 1.00f)
@@ -330,12 +267,6 @@ void psub4f(v4f *d, v4f v);
 /* =========================================================================
    GREENS
    ========================================================================= */
-
-/* gre4f: green
-   eme4f: emerald green
-   jad4f: jade green
-   oli4f: olive green
-   lim4f: lime green */
 
 #define gre4f ini4f(0.00f, 1.00f, 0.00f, 1.00f)
 #define eme4f ini4f(0.31f, 0.78f, 0.47f, 1.00f)
@@ -347,43 +278,15 @@ void psub4f(v4f *d, v4f v);
    YELLOWS
    ========================================================================= */
 
-/* yel4f: yellow
-   gol4f: gold (a yellow-orange)
-   amb4f: amber (a yellow-orange)
-   lem4f: lemon yellow
-   mus4f: mustard yellow */
-
 #define yel4f ini4f(1.00f, 1.00f, 0.00f, 1.00f)
 #define gol4f ini4f(1.00f, 0.84f, 0.00f, 1.00f)
 #define amb4f ini4f(1.00f, 0.75f, 0.00f, 1.00f)
 #define lem4f ini4f(1.00f, 0.97f, 0.00f, 1.00f)
 #define mus4f ini4f(0.96f, 0.86f, 0.35f, 1.00f)
 
-
 /* =========================================================================
    VECTOR 4 INT
    ========================================================================= */
-
-typedef union v4i v4i;
-
-union v4i
-{
-    s32 e[4];
-    struct 
-    {
-        s32 x;
-        s32 y;
-        s32 z;
-        s32 w;
-    };
-    struct 
-    {
-        s32 r;
-        s32 g;
-        s32 b;
-        s32 a;
-    };
-};
 
 v4i  vbez4i (f32 x1, f32 y1, f32 x2, f32 y2, f32 t);
 v4i  vlrp4i (v4i a, f32 t, v4i b);
@@ -403,13 +306,6 @@ void pvsub4i(v4i *d, v4i v);
    ========================================================================= */
 
 typedef struct rect2f rect2f;
-
-struct rect2f
-{
-    v2f min;
-    v2f max;
-};
-
 rect2f rini2f(f32 minX, f32 minY, f32 maxX, f32 maxY);
 
 /* =========================================================================
@@ -418,15 +314,51 @@ rect2f rini2f(f32 minX, f32 minY, f32 maxX, f32 maxY);
 
 typedef struct mat4f mat4f;
 
-struct mat4f
-{
-    f32 data[4][4];
-};
+/* =========================================================================
+   COLLISION DETECTION
+   ========================================================================= */
+
+bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection);
+bool circlef_vs_circlef(circlef A, circlef B);
+f32  circlef_vs_circlef_dist(circlef A, circlef B);
+void circlef_vs_circlef_witness(circlef A, circlef B, v2f *p1, v2f *p2);
+bool circlef_vs_ngonf(circlef circle, ngonf polygon);
+bool point_vs_rect2(v2f p, rect2f rect);
+
+
+
+
+
+
 
 
 /* =========================================================================
-   IMPLEMENTATION, FLOAT
+    INTENDED WHITE SPACE
    ========================================================================= */
+
+
+
+
+
+
+
+
+
+/* =========================================================================
+   IMPLEMENTATION
+   ========================================================================= */
+
+/* =========================================================================
+   FLOAT
+   ========================================================================= */
+
+void random_seed(u32 seed)
+{
+    if (seed == 0)
+        srand((u32)time(0));
+    else
+        srand(seed);
+}
 
 inline s32 rndi(s32 a, s32 b)
 {
@@ -605,7 +537,6 @@ inline v2f rot2f(v2f v, f32 a)
     return r;
 }
 
-
 /* =========================================================================
    VECTOR 2 INT
    ========================================================================= */
@@ -622,6 +553,40 @@ inline v2i ini2if(f32 x, f32 y)
     return r;
 }
 
+inline v2i add2i(v2i a, v2i b)
+{
+    v2i r =
+    {
+        a.x + b.x,
+        a.y + b.y
+    };
+    return r;
+}
+
+inline v2i sub2i(v2i a, v2i b)
+{
+    v2i r =
+    {
+        a.x - b.x,
+        a.y - b.y
+    };
+    return r;
+}
+
+void padd2i(v2i* d, v2i v)
+{
+    *d = add2i(*d, v);
+}
+
+inline v2i rnd2i(v2i a, v2i b)
+{
+    v2i r =
+    {
+        rndi(a.x, b.x),
+        rndi(a.y, b.y),
+    };
+    return r;
+}
 
 /* =========================================================================
    VECTOR 4 FLOAT
@@ -669,6 +634,79 @@ inline rect2f inir2f(f32 minX, f32 minY, f32 maxX, f32 maxY)
         {maxX, maxY},
     };
     return r;
+}
+
+/* =========================================================================
+     COLLISION DETECTION
+   ========================================================================= */
+
+bool line_vs_line(v2f p1, v2f p2, v2f q1, v2f q2, v2f *intersection)
+{
+    v2f r = { p2.x - p1.x, p2.y - p1.y };
+    v2f s = { q2.x - q1.x, q2.y - q1.y };
+    float rxs = r.x * s.y - r.y * s.x;
+    v2f qp = { q1.x - p1.x, q1.y - p1.y };
+    float t = (qp.x * s.y - qp.y * s.x) / rxs;
+    float u = (qp.x * r.y - qp.y * r.x) / rxs;
+    if (rxs == 0 || t < 0 || t > 1 || u < 0 || u > 1)
+        return false; // No intersection
+    else {
+        intersection->x = p1.x + t * r.x;
+        intersection->y = p1.y + t * r.y;
+        return true; // Intersection found
+    }
+}
+
+bool circlef_vs_circlef(circlef A, circlef B)
+{
+    f32 distsq = lsq2f(sub2f(B.center, A.center));
+    
+    f32 radii = A.radius + B.radius;
+    f32 radiisq = radii * radii;
+    
+    return (distsq < radiisq);
+}
+
+f32 circlef_vs_circlef_dist(circlef A, circlef B)
+{
+    return maxf(A.radius + B.radius - len2f(sub2f(A.center, B.center)), 0);
+}
+
+void circlef_vs_circlef_witness(circlef A, circlef B, v2f *p1, v2f *p2)
+{
+    v2f v = nrm2f(sub2f(A.center, B.center));
+    *p1 = sub2f(A.center, mul2f(A.radius, v));
+    *p2 = add2f(B.center, mul2f(B.radius, v));
+}
+
+bool circlef_vs_ngonf(circlef circle, ngonf polygon)
+{
+    // Cast a ray from the center of the circle to the right
+    v2f ray_origin = circle.center;
+    v2f ray_direction = { 1.0f, 0.0f };
+    v2f ray_endpoint = { ray_origin.x + 2.0f * circle.radius, ray_origin.y };
+    
+    int num_intersections = 0;
+    // Check if the ray intersects with any of the polygon edges
+    for (int i = 0; i < polygon.n; i++) {
+        v2f edge_start = polygon.vertices[i];
+        v2f edge_end = polygon.vertices[(i + 1) % polygon.n];
+        v2f intersection_point;
+        if (line_vs_line(ray_origin, ray_endpoint, edge_start, edge_end, &intersection_point))
+            num_intersections++;
+    }
+    
+    return (num_intersections % 2 == 1);
+}
+
+bool point_vs_rect2(v2f p, rect2f rect)
+{
+    if (p.x > rect.max.x ||
+        p.y > rect.max.y ||
+        p.x < rect.min.x ||
+        p.y < rect.min.y)
+        return false;
+    return true;
 }
 
 #endif

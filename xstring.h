@@ -7,15 +7,16 @@
 
 #define T wchar_t
 
+T *  xstrnew(T *str);
 void xstrcpy(T *dest, u32 destsize, T *src);
 void xstrcps(T *dest, u32 destsize, T *src, u32 size);
-bool xstreql(T *stra, T *strb);
+bool xstrcmp(T *stra, T *strb);
 s32  xstrlen(T *str);
 void xstrcat(T *dest, u32 destsize, T *b);
 T   *xstrint(int v);
 T   *xstrdbl(double value);
 
-bool xstreqlascii(char *stra, char *strb);
+bool xstrcmpascii(char *stra, char *strb);
 void xstrcpsascii(char *dest, u32 destsize, char *src, u32 size);
 T   *xstrascii   (char *ascii);
 
@@ -36,22 +37,39 @@ T   *xstrascii   (char *ascii);
 
 /* Implementation */
 
-void xstrcpy(T *dest, u32 destSize, T *src)
+T *xstrnew(T *str)
 {
-    wcscpy_s(dest, destSize, src);
+    s32 length = xstrlen(str)+1;
+    T *result = xalloc(length*sizeof(T));
+    
+    xstrcpy(result, length, str);
+    
+    // xcopy(result, str, length*sizeof(T));
+    
+    result[length-1] = 0;
+    return result;
 }
 
-void xstrcps(T *dest, u32 destSize, T *src, u32 copySize)
+void xstrcpy(T *dest, u32 destLength, T *src)
 {
-    wcsncpy_s(dest, destSize, src, copySize);
+    assert(dest);
+    assert(destLength > 0);
+    assert(src);
+    
+    wcscpy_s(dest, destLength, src);
 }
 
-bool xstreql(T *a, T *b)
+void xstrcps(T *dest, u32 destLength, T *src, u32 copyLength)
+{
+    wcsncpy_s(dest, destLength, src, copyLength);
+}
+
+bool xstrcmp(T *a, T *b)
 {
     return (wcscmp(a, b) == 0);
 }
 
-bool xstreqlascii(char *a, char *b)
+bool xstrcmpascii(char *a, char *b)
 {
     return (strcmp(a, b) == 0);
 }
@@ -75,7 +93,7 @@ T *xstrfromascii(char *as)
 {
     T *r;
     s32 l;
-
+    
     l = (s32)strlen(as)+1;
     r = xnalloc(l, T);
     MultiByteToWideChar(CP_ACP, 0, as, -1, r, l);
