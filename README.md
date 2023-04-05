@@ -11,50 +11,40 @@ Extra libraries for C language (In Progress)
 ```batch
 @echo off
 
-set warn=-wd4189 -wd4100 -wd4201 -wd4042 -wd4115
+set warn=-W4 -wd4189 -wd4100 -wd4201 -wd4042 -wd4115
 
 IF NOT EXIST bin mkdir bin
 
 cls
 
 pushd bin
-cl -Z7 -FC -W4 %warn% -nologo ../main.c
+cl -Z7 -FC %warn% -nologo ../main.c
 popd
 ```
 ### main.c ###
 ```c
 #define STB_IMAGE_IMPLEMENTATION
 #include "w:/libs/stb_image.h"
+#include "w:/libs/xlibs/xd3d11.h"
+#include "w:/libs/xlibs/xrender2d.h"
 
-#include "w:/libs/xlibs/xrender.h"
-
-LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
+global XRenderBatch layer1;
 
 XWINMAIN()
 {
-    xrender_init((XRenderConfig){window_proc, .topDown=true});
-    xwindow_init((XWindowConfig){LoadCursor(NULL, IDC_ARROW), xrnd.windowHandle});
+    xd11_initialize((XD11Config){window_proc, 0, 0, L"My Window"});
+    xwin_initialize((XWindowConfig){LoadCursor(NULL, IDC_ARROW), xd11.window_handle});
+    xrender2d_initialize((v4f){.2f,.2f,.2f,1});
     
-    /* Create resources */
-    
-    while (xrnd.running)
+    while (xd11.running)
     {
-        MSG message;
-        while (PeekMessageW(&message, NULL, 0, 0, PM_REMOVE))
-        {
-            TranslateMessage(&message);
-            DispatchMessageW(&message);
-        }
-        
-        /* Do stuff */
-        
-        xrender_update();
-        xwindow_update(xrnd.topDown, xrnd.windowSize);
+        xrender2d_pre_update();
+        draw_rect(&layer1, xwin.mouse.pos, (v2f){50,50}, gol4f);
+        xrender2d_post_update(&layer1, 1);
+        xrender2d_reset_batch(&layer1);
     }
-    
-    /* Free resources */
-    
-    xrender_shutdown();
+    xrender2d_shutdown();
+    xd11_shutdown();
 }
 
 LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
@@ -69,10 +59,6 @@ LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
         } break;
     }
     return result;
-}
-
-void xrender_resized(void)
-{
 }
 ```
 

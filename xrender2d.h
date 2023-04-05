@@ -1001,8 +1001,10 @@ void xrender2d_create_sprite_pass(void)
 void xrender2d_create_resources(void)
 {
     /* Create resources */
+    wchar_t full_path[512];
+    xwin_path_abs(full_path, 512, L"images/white.png");
     v2i white_dim;
-    u8 *white_bytes = xrender2d_load_png(L"images/white.png", &white_dim, false);
+    u8 *white_bytes = xrender2d_load_png(full_path, &white_dim, false);
     if (!white_bytes)
         assert(!"Need to have a white.png in images directory!");
     xrender2d.sprite_white = xrender2d_sprite_from_bytes(&xrender2d.texture_atlas, white_bytes, white_dim);
