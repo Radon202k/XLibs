@@ -1,55 +1,6 @@
 #ifndef XLIB_MATH
 #define XLIB_MATH
 
-/*
-i: int
-    f: float
-    rad: radians
-    deg: degrees
-    new: allocation
-    add: addition
-    sub: subtraction
-    mul: multiplication
-    dot: dot product
-    len: length
-    nrm: normalize
-    lrp: lerp
-    bez: bezier curve
-    lsq: length squared
-
-    Ex.: add2f: vector add 2 floats */
-
-/* =========================================================================
-    COLORS
-   ========================================================================= */
-
-/* blu4f: blue
-   sap4f: sapphire
-   cob4f: cobalt blue
-   cer4f: cerulean (a light blue)
-   azu4f: azure (a light blue)
-   ind4f: indigo (a deep blue-purple)
-   tur4f: turquoise (a blue-green) */
-
-/* red4f: red
-   cri4f: crimson (a deep red)
-   rub4f: ruby (a deep red)
-   sca4f: scarlet (a bright red)
-   ver4f: vermilion (a bright red-orange) */
-
-/* gre4f: green
-   eme4f: emerald green
-   jad4f: jade green
-   oli4f: olive green
-   lim4f: lime green */
-
-/* yel4f: yellow
-   gol4f: gold (a yellow-orange)
-   amb4f: amber (a yellow-orange)
-   lem4f: lemon yellow
-   mus4f: mustard yellow */
-
-
 /* =========================================================================
    DATA TYPES
    ========================================================================= */
@@ -99,6 +50,12 @@ typedef struct rect2f
     v2f min;
     v2f max;
 } rect2f;
+
+typedef struct rect3f
+{
+    v3f min;
+    v3f max;
+} rect3f;
 
 typedef struct mat4f
 {
@@ -157,6 +114,7 @@ v2f  add2f (v2f a, v2f b);
 v2f  sub2f (v2f a, v2f b);
 v2f  neg2f (v2f v);
 v2f  mul2f (f32 k, v2f a);
+v2f  had2f (v2f a, v2f b);
 v2f  nrm2f (v2f a);
 v2f  rnd2f (v2f a, v2f b);
 f32  dot2f (v2f a, v2f b);
@@ -243,48 +201,6 @@ void padd4f(v4f *d, v4f v);
 void psub4f(v4f *d, v4f v);
 
 /* =========================================================================
-   BLUES
-   ========================================================================= */
-
-#define blu4f ini4f(0.00f, 0.00f, 1.00f, 1.00f)
-#define sap4f ini4f(0.06f, 0.32f, 0.73f, 1.00f)
-#define cob4f ini4f(0.00f, 0.28f, 0.67f, 1.00f)
-#define cer4f ini4f(0.00f, 0.48f, 0.65f, 1.00f)
-#define azu4f ini4f(0.00f, 0.50f, 1.00f, 1.00f)
-#define ind4f ini4f(0.29f, 0.00f, 0.51f, 1.00f)
-#define tur4f ini4f(0.25f, 0.88f, 0.82f, 1.00f)
-
-/* =========================================================================
-   REDS
-   ========================================================================= */
-
-#define red4f ini4f(1.00f, 0.00f, 0.00f, 1.00f)
-#define cri4f ini4f(0.86f, 0.08f, 0.24f, 1.00f)
-#define rub4f ini4f(0.88f, 0.07f, 0.37f, 1.00f)
-#define sca4f ini4f(1.00f, 0.14f, 0.00f, 1.00f)
-#define ver4f ini4f(1.00f, 0.28f, 0.00f, 1.00f)
-
-/* =========================================================================
-   GREENS
-   ========================================================================= */
-
-#define gre4f ini4f(0.00f, 1.00f, 0.00f, 1.00f)
-#define eme4f ini4f(0.31f, 0.78f, 0.47f, 1.00f)
-#define jad4f ini4f(0.00f, 0.66f, 0.42f, 1.00f)
-#define oli4f ini4f(0.50f, 0.50f, 0.00f, 1.00f)
-#define lim4f ini4f(0.75f, 1.00f, 0.00f, 1.00f)
-
-/* =========================================================================
-   YELLOWS
-   ========================================================================= */
-
-#define yel4f ini4f(1.00f, 1.00f, 0.00f, 1.00f)
-#define gol4f ini4f(1.00f, 0.84f, 0.00f, 1.00f)
-#define amb4f ini4f(1.00f, 0.75f, 0.00f, 1.00f)
-#define lem4f ini4f(1.00f, 0.97f, 0.00f, 1.00f)
-#define mus4f ini4f(0.96f, 0.86f, 0.35f, 1.00f)
-
-/* =========================================================================
    VECTOR 4 INT
    ========================================================================= */
 
@@ -302,11 +218,95 @@ void pvadd4i(v4i *d, v4i v);
 void pvsub4i(v4i *d, v4i v);
 
 /* =========================================================================
+    COLORS
+   ========================================================================= */
+
+typedef enum {
+    NullColor,
+    White,
+    Black,
+    Gray,
+    LightGray,
+    LighterGray,
+    Blue,
+    Sapphire,
+    Cobalt,
+    Cerulean,
+    Azure,
+    Indigo,
+    Turquoise,
+    Red,
+    Crimson,
+    Ruby,
+    Scarlet,
+    Vermilion,
+    Green,
+    Emerald,
+    Jade,
+    Olive,
+    Lime,
+    Yellow,
+    Gold,
+    Amber,
+    Lemon,
+    Mustard,
+} Color;
+
+const v4f xcolor[] = {
+    {0.00f, 0.00f, 0.00f, 0.00f}, // null
+    {1.00f, 1.00f, 1.00f, 1.00f}, // white
+    {0.00f, 0.00f, 0.00f, 1.00f}, // black
+    {0.50f, 0.50f, 0.50f, 1.00f}, // gray
+    {0.75f, 0.75f, 0.75f, 1.00f}, // light gray
+    {0.90f, 0.90f, 0.90f, 1.00f}, // lighter gray
+    {0.00f, 0.00f, 1.00f, 1.00f}, // blue
+    {0.06f, 0.32f, 0.73f, 1.00f}, // sapphire
+    {0.00f, 0.28f, 0.67f, 1.00f}, // cobalt
+    {0.00f, 0.48f, 0.65f, 1.00f}, // cerulean
+    {0.00f, 0.50f, 1.00f, 1.00f}, // azure
+    {0.29f, 0.00f, 0.51f, 1.00f}, // indigo
+    {0.25f, 0.88f, 0.82f, 1.00f}, // turquoise
+    {1.00f, 0.00f, 0.00f, 1.00f}, // red
+    {0.86f, 0.08f, 0.24f, 1.00f}, // crimson
+    {0.88f, 0.07f, 0.37f, 1.00f}, // ruby
+    {1.00f, 0.14f, 0.00f, 1.00f}, // scarlet
+    {1.00f, 0.28f, 0.00f, 1.00f}, // vermilion
+    {0.00f, 1.00f, 0.00f, 1.00f}, // green
+    {0.31f, 0.78f, 0.47f, 1.00f}, // emerald
+    {0.00f, 0.66f, 0.42f, 1.00f}, // jade
+    {0.50f, 0.50f, 0.00f, 1.00f}, // olive
+    {0.75f, 1.00f, 0.00f, 1.00f}, // lime
+    {1.00f, 1.00f, 0.00f, 1.00f}, // yellow
+    {1.00f, 0.84f, 0.00f, 1.00f}, // gold
+    {1.00f, 0.75f, 0.00f, 1.00f}, // amber
+    {1.00f, 0.97f, 0.00f, 1.00f}, // lemon
+    {0.96f, 0.86f, 0.35f, 1.00f}, // mustard
+};
+
+/* =========================================================================
    RECT 2 FLOAT
    ========================================================================= */
 
 typedef struct rect2f rect2f;
-rect2f rini2f(f32 minX, f32 minY, f32 maxX, f32 maxY);
+
+rect2f rini2f           (f32 minX, f32 minY, f32 maxX, f32 maxY);
+rect2f rect2_min_dim    (v2f min, v2f dim);
+rect2f rect2_center_dim (v2f center, v2f dim);
+v2f    rect2_dim        (rect2f rect);
+v2f    rect2_center     (rect2f rect);
+
+
+/* =========================================================================
+   RECT 3 FLOAT
+   ========================================================================= */
+
+typedef struct rect3f rect3f;
+
+rect3f rect3_min_dim    (v3f min, v3f dim);
+rect3f rect3_center_dim (v3f center, v3f dim);
+v3f    rect3_dim        (rect3f rect);
+v3f    rect3_center     (rect3f rect);
+
 
 /* =========================================================================
    MATRIX 4X4 FLOAT
@@ -351,6 +351,11 @@ bool point_vs_rect2(v2f p, rect2f rect);
 /* =========================================================================
    FLOAT
    ========================================================================= */
+
+inline f32 
+sq(f32 value) {
+    return value*value;
+}
 
 void random_seed(u32 seed)
 {
@@ -500,6 +505,15 @@ void psub2f(v2f* d, v2f v)
     *d = sub2f(*d, v);
 }
 
+inline v2f
+had2f(v2f a, v2f b) {
+    v2f result = {
+        a.x*b.x,
+        a.y*b.y,
+    };
+    return result;
+}
+
 inline v2f nrm2f(v2f a)
 {
     assert(len2f(a) != 0);
@@ -626,7 +640,8 @@ inline v4f rnd4f(v4f a, v4f b)
    RECT 2 FLOAT
    ========================================================================= */
 
-inline rect2f inir2f(f32 minX, f32 minY, f32 maxX, f32 maxY)
+inline rect2f
+inir2f(f32 minX, f32 minY, f32 maxX, f32 maxY)
 {
     rect2f r =
     {
@@ -634,6 +649,103 @@ inline rect2f inir2f(f32 minX, f32 minY, f32 maxX, f32 maxY)
         {maxX, maxY},
     };
     return r;
+}
+
+inline rect2f
+rect2_center_dim(v2f center, v2f dim)
+{
+    rect2f r =
+    {
+        {center.x - 0.5f*dim.x, center.y - 0.5f*dim.y},
+        {center.x + 0.5f*dim.x, center.y + 0.5f*dim.y},
+    };
+    return r;
+}
+
+inline rect2f
+rect2_min_max(v2f min, v2f max)
+{
+    rect2f r =
+    {
+        {min.x, min.y},
+        {max.x, max.y},
+    };
+    return r;
+}
+
+inline rect2f
+rect2_min_dim(v2f min, v2f dim)
+{
+    rect2f r =
+    {
+        {min.x, min.y},
+        {min.x + dim.x, min.y + dim.y},
+    };
+    return r;
+}
+
+inline v2f
+rect2_dim(rect2f rect) {
+    v2f result = sub2f(rect.max, rect.min);
+    return result;
+}
+
+inline v2f
+rect2_center(rect2f rect) {
+    v2f dim = sub2f(rect.max, rect.min);
+    v2f center = add2f(rect.min, mul2f(0.5f, dim));
+    return center;
+}
+
+
+/* =========================================================================
+   RECT 2 FLOAT
+   ========================================================================= */
+
+inline rect3f
+rect3_center_dim(v3f center, v3f dim)
+{
+    rect3f r =
+    {
+        {center.x-0.5f*dim.x, center.y-0.5f*dim.y, center.z-0.5f*dim.z},
+        {center.x+0.5f*dim.x, center.y+0.5f*dim.y, center.z+0.5f*dim.z},
+    };
+    return r;
+}
+
+inline rect3f
+rect3_min_max(v3f min, v3f max)
+{
+    rect3f r =
+    {
+        {min.x, min.y, min.z},
+        {max.x, max.y, max.z},
+    };
+    return r;
+}
+
+inline rect3f
+rect3_min_dim(v3f min, v3f dim)
+{
+    rect3f r =
+    {
+        {min.x, min.y, min.z},
+        {min.x+dim.x, min.y+dim.y, min.z+dim.z},
+    };
+    return r;
+}
+
+inline v3f
+rect3_dim(rect3f rect) {
+    v3f result = sub3f(rect.max, rect.min);
+    return result;
+}
+
+inline v3f
+rect3_center(rect3f rect) {
+    v3f dim = sub3f(rect.max, rect.min);
+    v3f center = add3f(rect.min, mul3f(0.5f, dim));
+    return center;
 }
 
 /* =========================================================================

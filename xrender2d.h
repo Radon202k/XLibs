@@ -49,7 +49,7 @@ draw_line(&layer1, (v2f){0,0}, xwin.mouse.pos, (v4f){1,1,1,1});
 // Example draw board
 void draw_board(v2f board_size, f32 line_thickness)
 {
-    v2f board_pos = sub2f(mul2f(.5f, xd11.back_buffer_size), mul2f(.5f,board_size));
+    v2f board_pos = sub2f(mul2f(.5f, xd11.bbDim), mul2f(.5f,board_size));
     v2i line_count = {9,9};
     v2f line_size = {line_thickness,board_size.y+line_thickness};
     v2f line_space = (v2f){board_size.x/(line_count.x-1), board_size.y/(line_count.y-1)};
@@ -74,108 +74,51 @@ void draw_board(v2f board_size, f32 line_thickness)
 #define XRENDER2D_LINEVERTEX_MAX (1024/4*1024)/sizeof(TexturedVertex)
 #define XRENDER2D_TEXTUREDVERTEX_MAX (1*1024*1024)/sizeof(TexturedVertex)
 
-typedef struct
-{
-    XD11Texture texture;
-    u8 *bytes;
-    s32 bottom;
-    v2i at;
-} XTextureAtlas;
+#define ONE_PAST_MAX_FONT_CODEPOINT (0x10FFFF + 1)
+
+#define MAX_FONT_WIDTH 1024
+#define MAX_FONT_HEIGHT 1024
 
 typedef struct
 {
-    v2f size;
-    rect2f uv;
+    v2i dim;
+    rect3f uvs;
     v2f align;
 } XSprite;
 
-typedef struct XGlyphHashNode
+typedef struct
 {
-    wchar_t key;
-    XSprite *value;
-    struct XGlyphHashNode *next;
-    
-} XGlyphHashNode;
-
-#define XGLYPH_HASH_LENGTH 512
+    u32 unicodeCodePoint;
+    XSprite sprite;
+} XFontGlyph;
 
 typedef struct
 {
-    XGlyphHashNode *storage[XGLYPH_HASH_LENGTH];
-    
-} XGlyphHashTable;
-
-u32 xglyph_hash(wchar_t unicode)
-{
-    // TODO: Better hash function !!
-    u32 result = unicode & (XGLYPH_HASH_LENGTH-1);
-    return result;
-}
-
-XSprite *
-xglyph_get(XGlyphHashTable *table, wchar_t key)
-{
-    u32 hash = xglyph_hash(key);
-    assert(hash < XGLYPH_HASH_LENGTH);
-    
-    /* Search for a node with the same key */
-    XGlyphHashNode *found = 0, *at = table->storage[hash];
-    
-    while (at)
-    {
-        if (at->key == key)
-        {
-            found = at;
-            break;
-        }
-        
-        at = at->next;
-    }
-    
-    if (found)
-        return found->value;
-    else
-        return 0;
-}
-
-void
-xglyph_set(XGlyphHashTable *table, wchar_t key, XSprite *value)
-{
-    u32 hash = xglyph_hash(key);
-    assert(hash < XGLYPH_HASH_LENGTH);
-    
-    /* Make a new node */
-    XGlyphHashNode *new_node = xalloc(sizeof *new_node);
-    new_node->key = key;
-    new_node->value = value;
-    
-    /* Search for a node with the same key */
-    XGlyphHashNode *found = 0, *at = table->storage[hash];
-    
-    while (at)
-    {
-        if (at->key == key)
-        {
-            found = at;
-            break;
-        }
-        
-        at = at->next;
-    }
-    
-    new_node->next = table->storage[hash];
-    table->storage[hash] = new_node;
-}
-
-typedef struct
-{
-    f32 lineadvance, charwidth, maxdescent;
     wchar_t path[MAX_PATH];
-    HFONT handle;
     HBITMAP bitmap;
-    TEXTMETRICW metrics;
     VOID *bytes;
-    XGlyphHashTable glyphs;
+    //
+    HFONT handle;
+    TEXTMETRICW metrics;
+    
+    f32 charAvgWidth;
+    f32 lineHeight;
+    
+    XFontGlyph *glyphs;
+    f32 *horizontalAdvance;
+    
+    u32 minCodePoint;
+    u32 maxCodePoint;
+    
+    u32 maxGlyphCount;
+    u32 glyphCount;
+    
+    u32 *glyphIndexFromCodePoint;
+    u32 onePastHighestCodepoint;
+    
+    u8 *atlasBytes;
+    XTextureAtlas atlas;
+    rect3f atlasUvs;
 } XFont;
 
 typedef struct
@@ -234,11 +177,13 @@ typedef struct
 {
     XRenderCommand commands[4096];
     u32 command_index;
+    
+    rect2f *scissor;
 } XRenderBatch;
 
 typedef struct
 {
-    xd11_tx2d texture;
+    ID3D11Texture2D *texture;
     XD11DepthStencil depth_stencil;
 } XRenderTarget;
 
@@ -250,34 +195,54 @@ typedef struct
     v4f clear_color;
     
     u32 target_view_count;
-    xd11_tgv *target_views;
+    ID3D11RenderTargetView **target_views;
     
+    
+#if 0
+    XD11Texture texture_atlas_texture;
     XTextureAtlas texture_atlas;
+#else
+    XD11TextureArray textures;
+#endif
     
     /* Passes */
     XD11RenderPass pass_lines;
     XD11RenderPass pass_sprites;
-    
-    /* Resources */
-    XSprite sprite_white;
-    XSprite sprite_arrow;
 } XRender2D;
 
 LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
 
 global XRender2D xrender2d;
+global HDC globalFontDeviceContext;
+global VOID *globalFontBits;
+
+/* Resources */
+global XSprite sprite_white;
+global XSprite sprite_circle;
+global XSprite sprite_arrow;
+
+global XSprite sprite_circle_tl;
+global XSprite sprite_circle_tr;
+global XSprite sprite_circle_bl;
+global XSprite sprite_circle_br;
 
 void xrender2d_initialize (v4f clear_color);
 void xrender2d_shutdown   (void);
 void xrender2d_pre_update (void);
 void xrender2d_post_update(XRenderBatch *array, u32 count);
 
-void draw_line  (XRenderBatch *batch, v2f a,   v2f b,    v4f color);
-void draw_arrow (XRenderBatch *batch, v2f a,   v2f b,    v4f color, f32 head_size);
-void draw_rect  (XRenderBatch *batch, v2f pos, v2f size, v4f color);
-void draw_sprite(XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite sprite);
-void draw_text  (XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text);
-void draw_grid  (XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color);
+void draw_line   (XRenderBatch *batch, v2f a,   v2f b,    v4f color);
+void draw_arrow  (XRenderBatch *batch, v2f a,   v2f b,    v4f color, f32 head_size);
+void draw_rect   (XRenderBatch *batch, v2f pos, v2f size, v4f color);
+
+void draw_sprite (XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite sprite);
+
+void draw_circle (XRenderBatch *batch, v2f pos, v4f color, f32 radius);
+
+void draw_rect_rounded (XRenderBatch *batch, v2f pos, v2f size, v4f color, f32 radius);
+
+void draw_text   (XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text);
+void draw_grid   (XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color);
 
 void xrender2d_reset_batch(XRenderBatch *batch);
 
@@ -285,10 +250,17 @@ void xrender2d_reset_batch(XRenderBatch *batch);
    FONTS / GLYPHS
    ========================================================================= */
 
-XFont    xrender2d_font (XTextureAtlas *a, wchar_t *path, wchar_t *name, int heightpoints);
-XSprite  xrender2d_font_glyph (XTextureAtlas *a, XFont font, wchar_t c, rect2f *tBounds, s32 *tDescent);
-void     xrender2d_font_free   (XFont font);
-s32      xrender2d_font_height (s32 pointHeight);
+XFont *  xrender2d_font        (wchar_t *path, wchar_t *name, int heightpoints);
+XSprite  xrender2d_font_glyph  (XFont *font, u32 c);
+void     xrender2d_font_free   (XFont *font);
+v2f      xrender2d_font_dim    (XFont *font, wchar_t *text);
+
+void     xrender2d_break_text  (wchar_t *lines, u32 *lengths, u32 *lineCount, 
+                                u32 maxLineCount, u32 maxLineCharCount, 
+                                XFont *font, wchar_t *str, f32 maxWidth);
+
+
+
 
 /* =========================================================================
    TEXTURE / TEXTURE ATLAS / SPRITES
@@ -303,16 +275,9 @@ png file located at path, i.e., it loads the png and copies the bytes of the
 texture into the texture atlas and fills XXSprite with the corresponding uv coo
 rdinates and other info about the source image. */
 
-
-u8 *     xrender2d_load_png(wchar_t *path, v2i *dim, bool premulAlpha);
-
-XSprite   xrender2d_sprite_from_png  (XTextureAtlas *atlas, wchar_t *path, bool premulalpha);
-XSprite   xrender2d_sprite_from_bytes(XTextureAtlas *atlas, u8 *b, v2i dim);
-
-s32      xrender2d_font_height(s32 pointHeight);
-void     xrender2d_font_free(XFont f);
-
-void     xrender2d_blit_simple_unchecked(u8 *dest, v2i dest_size, u8 *src, v2i at, v2i dim);
+u8 *      xrender2d_load_png(wchar_t *path, v2i *dim);
+XSprite   xrender2d_sprite_from_png   (wchar_t *path);
+XSprite   xrender2d_sprite_from_bytes (u8 *b, v2i dim);
 
 /* =========================================================================
    END OF INTERFACE
@@ -343,7 +308,7 @@ typedef struct
 typedef struct
 {
     v3f position;
-    v2f uvs;
+    v3f uvs;
     v4f color;
 } TexturedVertex;
 
@@ -372,6 +337,8 @@ XRenderCommand *xrender2d_push_command(XRenderBatch *batch);
 /* =========================================================================
    IMPLEMENTATION
    ========================================================================= */
+
+function void initialize_font_dc(void);
 
 /* Lines Vertex shader */
 char *linesVS = 
@@ -421,14 +388,14 @@ char *spritesVS =
 "struct vs_in"
 "{"
 "  float3 position_local : POS;"
-"  float2 uv             : TEX;"
+"  float3 uv             : TEX;"
 "  float4 color          : COL;"
 "};"
 
 "struct vs_out"
 "{"
 "  float4 position_clip : SV_POSITION;"
-"  float2 uv            : TEXCOORD;"
+"  float3 uv            : TEXCOORD;"
 "  float4 color         : COLOR;"
 "};"
 
@@ -454,11 +421,11 @@ char *spritesPS =
 "struct ps_in"
 "{"
 "  float4 position_clip : SV_POSITION;"
-"  float2 uv            : TEXCOORD;"
+"  float3 uv            : TEXCOORD;"
 "  float4 color         : COLOR;"
 "};"
 
-"Texture2D tex;"
+"Texture2DArray tex;"
 "SamplerState samp;"
 
 "float4 ps_main(ps_in input) : SV_TARGET"
@@ -512,6 +479,66 @@ void draw_sprite(XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite spri
     command->sprite.sprite = sprite;
 }
 
+void
+draw_circle(XRenderBatch *batch, v2f pos, v4f color, f32 radius) {
+    draw_sprite(batch, 
+                sub2f(pos, (v2f){radius,radius}),
+                (v2f){2*radius,2*radius}, 
+                color, 
+                sprite_circle);
+}
+
+void
+draw_rect_rounded(XRenderBatch *batch, v2f pos, v2f size, v4f color, f32 radius) {
+    v2f dim = (v2f){radius,radius};
+    draw_sprite(batch, 
+                pos, 
+                dim, 
+                color,
+                sprite_circle_tl);
+    
+    draw_sprite(batch, 
+                add2f(pos, (v2f){size.x-radius,0}), 
+                dim, 
+                color,
+                sprite_circle_tr);
+    
+    draw_sprite(batch, 
+                add2f(pos, (v2f){0,size.y-radius}),
+                dim, 
+                color,
+                sprite_circle_bl);
+    
+    draw_sprite(batch, 
+                add2f(pos, (v2f){size.x-radius,size.y-radius}), 
+                dim, 
+                color,
+                sprite_circle_br);
+    
+    f32 posXPlusRadius = floorf(pos.x + radius);
+    f32 posYPlusRadius = floorf(pos.y + radius);
+    
+    /* Center */
+    draw_rect(batch,
+              (v2f){posXPlusRadius-1, pos.y},
+              (v2f){floorf(size.x-2*radius)+3,size.y},
+              color);
+    
+    /* Left strip */
+    draw_rect(batch,
+              (v2f){pos.x, posYPlusRadius-1},
+              (v2f){ceilf(radius),floorf(size.y-2*radius)+3},
+              color);
+    
+    /* Right strip */
+    draw_rect(batch,
+              add2f(pos, (v2f){size.x-radius,radius-1}),
+              (v2f){radius,floorf(size.y-2*radius)+3},
+              color);
+    
+}
+
+
 void draw_text(XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text)
 {
     XRenderCommand *command = xrender2d_push_command(batch);
@@ -527,22 +554,22 @@ void draw_grid(XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color)
 {
     v2i grid_horizontal_line_count = 
     {
-        (s32)ceilf(xd11.back_buffer_size.x / gap.x),
-        (s32)ceilf(xd11.back_buffer_size.y / gap.y),
+        (s32)ceilf(xd11.bbDim.x / gap.x),
+        (s32)ceilf(xd11.bbDim.y / gap.y),
     };
     
     /* Draw vertical lines */
     for (s32 x=0; x<grid_horizontal_line_count.x; ++x)
         draw_rect(batch, 
                   (v2f){x*gap.x, 0}, 
-                  (v2f){line_thickness.x, xd11.back_buffer_size.y}, 
+                  (v2f){line_thickness.x, xd11.bbDim.y}, 
                   color);
     
     /* Draw horizontal lines */
     for (s32 y=0; y<grid_horizontal_line_count.y; ++y)
         draw_rect(batch, 
                   (v2f){0, y*gap.y}, 
-                  (v2f){xd11.back_buffer_size.x, line_thickness.y}, 
+                  (v2f){xd11.bbDim.x, line_thickness.y}, 
                   color);
     
 }
@@ -594,15 +621,18 @@ void xrender2d_post_update(XRenderBatch *array, u32 count)
         Array_toarray(texVertices, &texVertexArray, &texVertexCount);
         
         /* Update vertex buffers */
-        xd11_buffer_update(xrender2d.pass_lines.vertex_buffers.array[0], 
+        xd11_buffer_update(xrender2d.pass_lines.vBuffers.array[0], 
                            lineVertexArray, lineVertexCount*sizeof(LineVertex));
         
-        xd11_buffer_update(xrender2d.pass_sprites.vertex_buffers.array[0], 
+        xd11_buffer_update(xrender2d.pass_sprites.vBuffers.array[0], 
                            texVertexArray, texVertexCount*sizeof(TexturedVertex));
         
         /* Execute render passes */
-        xd11_render_pass(&xrender2d.pass_lines, lineVertexCount);
-        xd11_render_pass(&xrender2d.pass_sprites, texVertexCount);
+        xd11_render_pass(&xrender2d.pass_lines, lineVertexCount, 
+                         batch->scissor, 0, 0);
+        
+        xd11_render_pass(&xrender2d.pass_sprites, texVertexCount, 
+                         batch->scissor, 1, &xrender2d.textures.tex.view);
         
         /* Free C arrays and Array_Ts */
         xfree(lineVertexArray);
@@ -614,7 +644,7 @@ void xrender2d_post_update(XRenderBatch *array, u32 count)
     
     
     xd11_update();
-    xwin_update(true, xd11.window_size);
+    xwin_update(true, xd11.wndDim);
 }
 
 void xrender2d_depth_stencil(XD11DepthStencil *depth_stencil,
@@ -634,6 +664,8 @@ void xrender2d_depth_stencil(XD11DepthStencil *depth_stencil,
 
 void xrender2d_initialize(v4f clear_color)
 {
+    initialize_font_dc();
+    
     xrender2d.clear_color = clear_color;
     
     /* Get back buffer texture from swap chain */    
@@ -641,15 +673,15 @@ void xrender2d_initialize(v4f clear_color)
     
     /* Create render target view */
     xrender2d.target_view_count = 1;
-    xrender2d.target_views = xalloc(1*sizeof(xd11_tgv));
+    xrender2d.target_views = xalloc(1*sizeof(ID3D11RenderTargetView *));
     xrender2d.target_views[0] = xd11_target_view(xrender2d.target_default.texture);
     
     /* Depth stencil */
     xrender2d_depth_stencil(&xrender2d.target_default.depth_stencil,
                             (D3D11_TEXTURE2D_DESC)
                             {
-                                (s32)xd11.back_buffer_size.x, // Width
-                                (s32)xd11.back_buffer_size.y, // Height
+                                (s32)xd11.bbDim.x, // Width
+                                (s32)xd11.bbDim.y, // Height
                                 0, // Mip levels
                                 1, // Array size
                                 DXGI_FORMAT_D24_UNORM_S8_UINT, // Format
@@ -679,38 +711,41 @@ void xrender2d_initialize(v4f clear_color)
     
     
     /* XSprite and Lines */
-    xrender2d.pass_lines.depth_stencil = xrender2d.target_default.depth_stencil;
-    xrender2d.pass_sprites.depth_stencil = xrender2d.target_default.depth_stencil;
+    xrender2d.pass_lines.depthStencil = xrender2d.target_default.depth_stencil;
+    xrender2d.pass_sprites.depthStencil = xrender2d.target_default.depth_stencil;
     
-    /* Texture atlas texture */
+    /* Texture array */
     {
-        u32 atlas_size = 2048;
-        u32 bytes_size = atlas_size*atlas_size*4;
+        u32 textureArraySide = 512;
+        xrender2d.textures.mipLevels  = 9;
         
         /* Create D3D11 texture */
         D3D11_TEXTURE2D_DESC desc =
         {
-            atlas_size, // Width
-            atlas_size, // Height
-            1, // Mip levels 
-            1, // Array size
+            textureArraySide, // Width
+            textureArraySide, // Height
+            xrender2d.textures.mipLevels,  // Mip levels
+            32, // Array size
             DXGI_FORMAT_R8G8B8A8_UNORM, // Format
             {1,0}, // Sample
-            D3D11_USAGE_DYNAMIC, // Usage 
-            D3D11_BIND_SHADER_RESOURCE, // Bind flags
-            D3D11_CPU_ACCESS_WRITE, // Cpu access flags
-            0 // Misc flags
+            D3D11_USAGE_DEFAULT, // Usage 
+            D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET, // Bind flags
+            0, // Cpu access flags
+            D3D11_RESOURCE_MISC_GENERATE_MIPS // Misc flags
         };
-        xrender2d.texture_atlas.texture.handle = xd11_texture2d(desc, 0);
+        xrender2d.textures.tex.handle = xd11_texture2d(desc, 0);
+        xrender2d.textures.tex.dim    = fil2i(textureArraySide);
+        xrender2d.textures.dim        = fil2i(textureArraySide);
         
-        xrender2d.texture_atlas.texture.size   = fil2i(atlas_size);
-        
-        /* Create CPU memory bitmap */
-        s32 bitmap_size = xrender2d.texture_atlas.texture.size.x * 
-            xrender2d.texture_atlas.texture.size.y * 4;
-        
-        
-        xrender2d.texture_atlas.bytes  = (u8*)xalloc(bitmap_size);
+        /* Create the shader resource view */
+        xrender2d.textures.tex.view = 
+            xd11_shader_res_view(xrender2d.textures.tex.handle,
+                                 (D3D11_SHADER_RESOURCE_VIEW_DESC)
+                                 {
+                                     DXGI_FORMAT_R8G8B8A8_UNORM,
+                                     D3D_SRV_DIMENSION_TEXTURE2DARRAY,
+                                     .Texture2DArray = (D3D11_TEX2D_ARRAY_SRV){0, desc.MipLevels, 0, desc.ArraySize}
+                                 });
     }
     
     /* Create passes */
@@ -721,10 +756,8 @@ void xrender2d_initialize(v4f clear_color)
     xrender2d_create_resources();
 }
 
-void xrender2d_shutdown(void)
-{
+void xrender2d_shutdown(void) {
     xrender2d_free_passes();
-    xfree(xrender2d.texture_atlas.bytes);
 }
 
 void xrender2d_create_line_pass(void)
@@ -754,101 +787,100 @@ void xrender2d_create_line_pass(void)
     
     /* Vertex shader */
     ID3DBlob *compiledVS;
-    xrender2d.pass_lines.vertex_shader = xd11_compile_vertex_shader(linesVS, &compiledVS);
+    xrender2d.pass_lines.vShader = xd11_compile_vshader(linesVS, &compiledVS);
     
     /* Pixel shader */
     ID3DBlob *compiledPS;
-    xrender2d.pass_lines.pixel_shader = xd11_compile_pixel_shader(linesPS, &compiledPS);
+    xrender2d.pass_lines.pShader = xd11_compile_pshader(linesPS, &compiledPS);
     
     /* Input layout */
-    xrender2d.pass_lines.input_layout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
+    xrender2d.pass_lines.inputLayout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
     
     /* Render target view */
-    xrender2d.pass_lines.target_view = xrender2d.target_views[0];
+    xrender2d.pass_lines.targetView = xrender2d.target_views[0];
     
     /* Blend state */
-    xrender2d.pass_lines.blend_state = xd11_blend_state((D3D11_BLEND_DESC)
-                                                        {
-                                                            false,
-                                                            false,
-                                                            .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
-                                                                true,
-                                                                D3D11_BLEND_SRC_ALPHA,
-                                                                D3D11_BLEND_INV_SRC_ALPHA,
-                                                                D3D11_BLEND_OP_ADD,
-                                                                D3D11_BLEND_ONE,
-                                                                D3D11_BLEND_ZERO,
-                                                                D3D11_BLEND_OP_ADD,
-                                                                D3D11_COLOR_WRITE_ENABLE_ALL,
-                                                            },
-                                                        });
+    xrender2d.pass_lines.blendState = xd11_blend_state((D3D11_BLEND_DESC)
+                                                       {
+                                                           false,
+                                                           false,
+                                                           .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
+                                                               true,
+                                                               D3D11_BLEND_SRC_ALPHA,
+                                                               D3D11_BLEND_INV_SRC_ALPHA,
+                                                               D3D11_BLEND_OP_ADD,
+                                                               D3D11_BLEND_ONE,
+                                                               D3D11_BLEND_ZERO,
+                                                               D3D11_BLEND_OP_ADD,
+                                                               D3D11_COLOR_WRITE_ENABLE_ALL,
+                                                           },
+                                                       });
     /* Rasterizer state */
-    xrender2d.pass_lines.rasterizer_state = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
-                                                                  {
-                                                                      D3D11_FILL_SOLID, 
-                                                                      D3D11_CULL_BACK, 
-                                                                      false,
-                                                                      0, 
-                                                                      0, 
-                                                                      0, 
-                                                                      true, 
-                                                                      true, 
-                                                                      false, 
-                                                                      false,
-                                                                  });
+    xrender2d.pass_lines.rasterizerState = 
+        xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
+                              {
+                                  D3D11_FILL_SOLID, 
+                                  D3D11_CULL_BACK, 
+                                  false,
+                                  0, 
+                                  0, 
+                                  0, 
+                                  true, 
+                                  true, 
+                                  false, 
+                                  false,
+                              });
     
     /* Sampler state */
-    xrender2d.pass_lines.sampler_state = xd11_sampler_state((D3D11_SAMPLER_DESC)
-                                                            {
-                                                                D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                                                                D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                D3D11_COMPARISON_NEVER,
-                                                                0,
-                                                                D3D11_FLOAT32_MAX,
-                                                            });
+    xrender2d.pass_lines.samplerState = 
+        xd11_sampler_state((D3D11_SAMPLER_DESC)
+                           {
+                               D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                               D3D11_TEXTURE_ADDRESS_WRAP,
+                               D3D11_TEXTURE_ADDRESS_WRAP,
+                               D3D11_TEXTURE_ADDRESS_WRAP,
+                               D3D11_COMPARISON_NEVER,
+                               0,
+                               D3D11_FLOAT32_MAX,
+                           });
     
     /* Vertex buffers */
-    xrender2d.pass_lines.vertex_buffers.count = 1;
-    xrender2d.pass_lines.vertex_buffers.array = xalloc(1*sizeof(ID3D11Buffer *));
-    xrender2d.pass_lines.vertex_buffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
-                                                               {
-                                                                   XRENDER2D_LINEVERTEX_MAX*sizeof(LineVertex),
-                                                                   D3D11_USAGE_DYNAMIC, 
-                                                                   D3D11_BIND_VERTEX_BUFFER,
-                                                                   D3D11_CPU_ACCESS_WRITE, 
-                                                                   0, 
-                                                                   sizeof(LineVertex)
-                                                               },
-                                                               0);
+    xrender2d.pass_lines.vBuffers.count = 1;
+    xrender2d.pass_lines.vBuffers.array = xalloc(1*sizeof(ID3D11Buffer *));
+    xrender2d.pass_lines.vBuffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
+                                                         {
+                                                             XRENDER2D_LINEVERTEX_MAX*sizeof(LineVertex),
+                                                             D3D11_USAGE_DYNAMIC, 
+                                                             D3D11_BIND_VERTEX_BUFFER,
+                                                             D3D11_CPU_ACCESS_WRITE, 
+                                                             0, 
+                                                             sizeof(LineVertex)
+                                                         },
+                                                         0);
     
     /* Vertex buffer strides */
-    xrender2d.pass_lines.vertex_buffers.strides = xalloc(1*sizeof(UINT));
-    xrender2d.pass_lines.vertex_buffers.strides[0] = sizeof(LineVertex);
+    xrender2d.pass_lines.vBuffers.strides = xalloc(1*sizeof(UINT));
+    xrender2d.pass_lines.vBuffers.strides[0] = sizeof(LineVertex);
     
     /* Vertex buffer offsets */
-    xrender2d.pass_lines.vertex_buffers.offsets = xalloc(1*sizeof(UINT));
-    xrender2d.pass_lines.vertex_buffers.offsets[0] = 0;
+    xrender2d.pass_lines.vBuffers.offsets = xalloc(1*sizeof(UINT));
+    xrender2d.pass_lines.vBuffers.offsets[0] = 0;
     
     /* Vertex shader constant buffers */
-    xrender2d.pass_lines.vs_cbuffer_count = 1;
-    xrender2d.pass_lines.vs_cbuffers = xalloc(1*sizeof(xd11_buf));
+    xrender2d.pass_lines.vShaderCBufferCount = 1;
+    xrender2d.pass_lines.vShaderCBuffers = xalloc(1*sizeof(ID3D11Buffer *));
     
-    xrender2d.pass_lines.vs_cbuffers[0] = xd11_buffer((D3D11_BUFFER_DESC)
-                                                      {
-                                                          sizeof(mat4f),
-                                                          D3D11_USAGE_DEFAULT, 
-                                                          D3D11_BIND_CONSTANT_BUFFER,
-                                                          0,
-                                                          0,
-                                                          0,
-                                                      },
-                                                      0);
-    
-    /* Pixel shader resources */
-    xrender2d.pass_lines.ps_resource_count = 0;
-    xrender2d.pass_lines.ps_resources = 0;
+    xrender2d.pass_lines.vShaderCBuffers[0] = 
+        xd11_buffer((D3D11_BUFFER_DESC)
+                    {
+                        sizeof(mat4f),
+                        D3D11_USAGE_DEFAULT, 
+                        D3D11_BIND_CONSTANT_BUFFER,
+                        0,
+                        0,
+                        0,
+                    },
+                    0);
     
     /* Topology */
     xrender2d.pass_lines.topology = D3D_PRIMITIVE_TOPOLOGY_LINELIST;
@@ -856,12 +888,7 @@ void xrender2d_create_line_pass(void)
     /* Viewports */
     xrender2d.pass_lines.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&xrender2d.pass_lines.viewports, 
-               &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
-    
-    /* Scissors */
-    xrender2d.pass_lines.scissors = Array_new(1, sizeof(D3D11_RECT));
-    Array_push(&xrender2d.pass_lines.scissors,
-               &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+               &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
 }
 
 void xrender2d_create_sprite_pass(void)
@@ -872,7 +899,7 @@ void xrender2d_create_sprite_pass(void)
         { "POS", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 
             D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         
-        { "TEX", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 
+        { "TEX", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 
             D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0 },
         
         { "COL", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 
@@ -881,108 +908,91 @@ void xrender2d_create_sprite_pass(void)
     
     /* Vertex shader */
     ID3DBlob *compiledVS;
-    xrender2d.pass_sprites.vertex_shader = xd11_compile_vertex_shader(spritesVS, &compiledVS);
+    xrender2d.pass_sprites.vShader = 
+        xd11_compile_vshader(spritesVS, &compiledVS);
     
     /* Pixel shader */
     ID3DBlob *compiledPS;
-    xrender2d.pass_sprites.pixel_shader = xd11_compile_pixel_shader(spritesPS, &compiledPS);
+    xrender2d.pass_sprites.pShader = 
+        xd11_compile_pshader(spritesPS, &compiledPS);
     
     /* Input layout */
-    xrender2d.pass_sprites.input_layout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
+    xrender2d.pass_sprites.inputLayout = xd11_input_layout(compiledVS, inputFormat, narray(inputFormat));
     
     /* Render target view */
-    xrender2d.pass_sprites.target_view = xrender2d.target_views[0];
+    xrender2d.pass_sprites.targetView = xrender2d.target_views[0];
     
     /* Blend state */
-    xrender2d.pass_sprites.blend_state = xd11_blend_state((D3D11_BLEND_DESC)
-                                                          {
-                                                              false,
-                                                              false,
-                                                              .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
-                                                                  true,
-                                                                  D3D11_BLEND_SRC_ALPHA,
-                                                                  D3D11_BLEND_INV_SRC_ALPHA,
-                                                                  D3D11_BLEND_OP_ADD,
-                                                                  D3D11_BLEND_ONE,
-                                                                  D3D11_BLEND_ZERO,
-                                                                  D3D11_BLEND_OP_ADD,
-                                                                  D3D11_COLOR_WRITE_ENABLE_ALL,
-                                                              },
-                                                          });
+    xrender2d.pass_sprites.blendState = xd11_blend_state((D3D11_BLEND_DESC)
+                                                         {
+                                                             false,
+                                                             false,
+                                                             .RenderTarget[0] = (D3D11_RENDER_TARGET_BLEND_DESC){
+                                                                 true,
+                                                                 D3D11_BLEND_SRC_ALPHA,
+                                                                 D3D11_BLEND_INV_SRC_ALPHA,
+                                                                 D3D11_BLEND_OP_ADD,
+                                                                 D3D11_BLEND_ONE,
+                                                                 D3D11_BLEND_ZERO,
+                                                                 D3D11_BLEND_OP_ADD,
+                                                                 D3D11_COLOR_WRITE_ENABLE_ALL,
+                                                             },
+                                                         });
     
     /* Rasterizer state */
-    xrender2d.pass_sprites.rasterizer_state = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
-                                                                    {
-                                                                        // D3D11_FILL_WIREFRAME,
-                                                                        D3D11_FILL_SOLID, 
-                                                                        D3D11_CULL_BACK, 
-                                                                        false,
-                                                                        0, 
-                                                                        0, 
-                                                                        0, 
-                                                                        true, 
-                                                                        true, 
-                                                                        false, 
-                                                                        false,
-                                                                    });
+    xrender2d.pass_sprites.rasterizerState = xd11_rasterizer_state((D3D11_RASTERIZER_DESC)
+                                                                   {
+                                                                       // D3D11_FILL_WIREFRAME,
+                                                                       D3D11_FILL_SOLID, 
+                                                                       D3D11_CULL_BACK, 
+                                                                       false,
+                                                                       0, 
+                                                                       0, 
+                                                                       0, 
+                                                                       true, 
+                                                                       true, 
+                                                                       false, 
+                                                                       false,
+                                                                   });
     
     /* Sampler state */
-    xrender2d.pass_sprites.sampler_state = xd11_sampler_state((D3D11_SAMPLER_DESC)
-                                                              {
-                                                                  D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-                                                                  D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                  D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                  D3D11_TEXTURE_ADDRESS_WRAP,
-                                                                  D3D11_COMPARISON_NEVER,
-                                                                  0,
-                                                                  D3D11_FLOAT32_MAX,
-                                                              });
+    xrender2d.pass_sprites.samplerState = xd11_sampler_state(xd11_sampler_desc());
     
     /* Vertex buffers */
-    xrender2d.pass_sprites.vertex_buffers.count = 1;
-    xrender2d.pass_sprites.vertex_buffers.array = xalloc(1*sizeof(ID3D11Buffer *));
-    xrender2d.pass_sprites.vertex_buffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
-                                                                 {
-                                                                     XRENDER2D_TEXTUREDVERTEX_MAX*sizeof(TexturedVertex), 
-                                                                     D3D11_USAGE_DYNAMIC, 
-                                                                     D3D11_BIND_VERTEX_BUFFER,
-                                                                     D3D11_CPU_ACCESS_WRITE, 
-                                                                     0, 
-                                                                     sizeof(TexturedVertex)
-                                                                 },
-                                                                 0);
+    xrender2d.pass_sprites.vBuffers.count = 1;
+    xrender2d.pass_sprites.vBuffers.array = xalloc(1*sizeof(ID3D11Buffer *));
+    xrender2d.pass_sprites.vBuffers.array[0] = xd11_buffer((D3D11_BUFFER_DESC)
+                                                           {
+                                                               XRENDER2D_TEXTUREDVERTEX_MAX*sizeof(TexturedVertex), 
+                                                               D3D11_USAGE_DYNAMIC, 
+                                                               D3D11_BIND_VERTEX_BUFFER,
+                                                               D3D11_CPU_ACCESS_WRITE, 
+                                                               0, 
+                                                               sizeof(TexturedVertex)
+                                                           },
+                                                           0);
     /* Vertex buffers strides */
-    xrender2d.pass_sprites.vertex_buffers.strides = xalloc(1*sizeof(UINT));
-    xrender2d.pass_sprites.vertex_buffers.strides[0] = sizeof(TexturedVertex);
+    xrender2d.pass_sprites.vBuffers.strides = xalloc(1*sizeof(UINT));
+    xrender2d.pass_sprites.vBuffers.strides[0] = sizeof(TexturedVertex);
     
     /* Vertex buffers offsets */
-    xrender2d.pass_sprites.vertex_buffers.offsets = xalloc(1*sizeof(UINT));
-    xrender2d.pass_sprites.vertex_buffers.offsets[0] = 0;
+    xrender2d.pass_sprites.vBuffers.offsets = xalloc(1*sizeof(UINT));
+    xrender2d.pass_sprites.vBuffers.offsets[0] = 0;
     
     /* Vertex Shader Constant buffers */
-    xrender2d.pass_sprites.vs_cbuffer_count = 1;
-    xrender2d.pass_sprites.vs_cbuffers = xalloc(1*sizeof(xd11_buf));
-    xrender2d.pass_sprites.vs_cbuffers[0] = xd11_buffer((XD11_BUFD)
-                                                        {
-                                                            sizeof(mat4f),
-                                                            D3D11_USAGE_DEFAULT, 
-                                                            D3D11_BIND_CONSTANT_BUFFER,
-                                                            0,
-                                                            0,
-                                                            0,
-                                                        },
-                                                        0);
-    
-    /* Pixel Shader Resources */
-    xrender2d.pass_sprites.ps_resource_count = 1;
-    xrender2d.pass_sprites.ps_resources = xalloc(1*sizeof(xd11_srv));
-    xrender2d.pass_sprites.ps_resources[0] = xd11_shader_res_view(xrender2d.texture_atlas.texture.handle,
-                                                                  (D3D11_SHADER_RESOURCE_VIEW_DESC)
-                                                                  {
-                                                                      DXGI_FORMAT_R8G8B8A8_UNORM,
-                                                                      D3D_SRV_DIMENSION_TEXTURE2D,
-                                                                      .Texture2D = (D3D11_TEX2D_SRV){0,1}
-                                                                  });
+    xrender2d.pass_sprites.vShaderCBufferCount = 1;
+    xrender2d.pass_sprites.vShaderCBuffers = xalloc(1*sizeof(ID3D11Buffer *));
+    xrender2d.pass_sprites.vShaderCBuffers[0] = 
+        xd11_buffer((D3D11_BUFFER_DESC)
+                    {
+                        sizeof(mat4f),
+                        D3D11_USAGE_DEFAULT, 
+                        D3D11_BIND_CONSTANT_BUFFER,
+                        0,
+                        0,
+                        0,
+                    },
+                    0);
     
     /* Topology */
     xrender2d.pass_sprites.topology = D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST;
@@ -990,12 +1000,7 @@ void xrender2d_create_sprite_pass(void)
     /* Viewports */
     xrender2d.pass_sprites.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&xrender2d.pass_sprites.viewports,
-               &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
-    
-    /* Scissors */
-    xrender2d.pass_sprites.scissors = Array_new(1, sizeof(D3D11_RECT));
-    Array_push(&xrender2d.pass_sprites.scissors,
-               &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+               &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
 }
 
 void xrender2d_create_resources(void)
@@ -1004,61 +1009,120 @@ void xrender2d_create_resources(void)
     wchar_t full_path[512];
     xwin_path_abs(full_path, 512, L"images/white.png");
     v2i white_dim;
-    u8 *white_bytes = xrender2d_load_png(full_path, &white_dim, false);
-    if (!white_bytes)
+    u8 *white_bytes = xrender2d_load_png(full_path, &white_dim);
+    
+    if (!white_bytes) {
+        xd11_log("Need to have a white.png in images directory!");
         assert(!"Need to have a white.png in images directory!");
-    xrender2d.sprite_white = xrender2d_sprite_from_bytes(&xrender2d.texture_atlas, white_bytes, white_dim);
+    }
+    
+    sprite_white = xrender2d_sprite_from_bytes(white_bytes, white_dim);
+    
+    sprite_white.uvs.min.x += 0.05f;
+    sprite_white.uvs.max.x -= 0.05f;
+    sprite_white.uvs.min.y += 0.05f;
+    sprite_white.uvs.max.y -= 0.05f;
+    
     xfree(white_bytes);
     
-    xrender2d.sprite_arrow = xrender2d_sprite_from_png(&xrender2d.texture_atlas, L"images/arrow128.png", false);
+    sprite_circle = xrender2d_sprite_from_png(L"images/circle.png");
+    sprite_arrow = xrender2d_sprite_from_png(L"images/arrow128.png");
     
-    xd11_texture2d_update(xrender2d.texture_atlas.texture, xrender2d.texture_atlas.bytes);
+    /* Make circle quadrants */
+    s32 circleWidth = sprite_circle.dim.x;
+    s32 circleHeight = sprite_circle.dim.y;
+    f32 circleQuadrantWidth = circleWidth/2.0f;
+    f32 circleQuadrantHeight = circleHeight/2.0f;
+    
+    f32 circleUVWidth = sprite_circle.uvs.max.x - sprite_circle.uvs.min.x;
+    f32 circleUVHeight = sprite_circle.uvs.max.y - sprite_circle.uvs.min.y;
+    
+    f32 circleQuadrantUVWidth = circleUVWidth/2;
+    f32 circleQuadrantUVHeight = circleUVHeight/2;
+    
+    sprite_circle_bl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y, sprite_circle.uvs.min.z};
+    sprite_circle_bl.uvs.max = (v3f){
+        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
+        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
+        sprite_circle.uvs.min.z
+    };
+    
+    sprite_circle_tl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y + circleQuadrantUVHeight};
+    sprite_circle_tl.uvs.max = (v3f){sprite_circle.uvs.min.x + circleQuadrantUVWidth, sprite_circle.uvs.max.y};
+    
+    sprite_circle_tr.uvs.min = (v3f){
+        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
+        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
+        sprite_circle.uvs.min.z
+    };
+    sprite_circle_tr.uvs.max = (v3f){sprite_circle.uvs.max.x, sprite_circle.uvs.max.y, sprite_circle.uvs.min.z};
+    
+    sprite_circle_br.uvs.min = (v3f){
+        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
+        sprite_circle.uvs.min.y,
+        sprite_circle.uvs.min.z
+    };
+    sprite_circle_br.uvs.max = (v3f){
+        sprite_circle.uvs.max.x, 
+        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
+        sprite_circle.uvs.min.z};
+    
+    //xd11_texture2d_update(&xrender2d.texture_atlas.texture, xrender2d.texture_atlas.bytes);
 }
 
 void xrender2d_free_passes(void)
 {
     // Lines
-    xfree(xrender2d.pass_lines.vertex_buffers.array);
-    xfree(xrender2d.pass_lines.vertex_buffers.strides);
-    xfree(xrender2d.pass_lines.vertex_buffers.offsets);
-    xfree(xrender2d.pass_lines.vs_cbuffers);
+    xfree(xrender2d.pass_lines.vBuffers.array);
+    xfree(xrender2d.pass_lines.vBuffers.strides);
+    xfree(xrender2d.pass_lines.vBuffers.offsets);
+    xfree(xrender2d.pass_lines.vShaderCBuffers);
     Array_free(&xrender2d.pass_lines.viewports);
-    Array_free(&xrender2d.pass_lines.scissors);
     
     // XSprites
-    xfree(xrender2d.pass_sprites.vertex_buffers.array);
-    xfree(xrender2d.pass_sprites.vertex_buffers.strides);
-    xfree(xrender2d.pass_sprites.vertex_buffers.offsets);
-    xfree(xrender2d.pass_sprites.vs_cbuffers);
-    xfree(xrender2d.pass_sprites.ps_resources);
+    xfree(xrender2d.pass_sprites.vBuffers.array);
+    xfree(xrender2d.pass_sprites.vBuffers.strides);
+    xfree(xrender2d.pass_sprites.vBuffers.offsets);
+    xfree(xrender2d.pass_sprites.vShaderCBuffers);
     Array_free(&xrender2d.pass_sprites.viewports);
-    Array_free(&xrender2d.pass_sprites.scissors);
     
     // Core
     xfree(xrender2d.target_views);
 }
 
-void xrender2d_push_rect_vertices(Array_T *array, v2f pos, v2f size, rect2f uv, v4f color)
+void xrender2d_push_rect_vertices(Array_T *array, v2f pos, v2f size, rect3f uv, v4f color)
 {
     /* Upper triangle */
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x, pos.y, 0}, (v2f){uv.min.x, uv.max.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x, pos.y, 0}, 
+                   (v3f){uv.min.x, uv.min.y, uv.min.z}, 
+                   color});
     
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x + size.x, pos.y, 0}, (v2f){uv.max.x, uv.max.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x + size.x, pos.y, 0}, 
+                   (v3f){uv.max.x, uv.min.y, uv.min.z}, 
+                   color});
     
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x + size.x, pos.y + size.y, 0}, (v2f){uv.max.x, uv.min.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x + size.x, pos.y + size.y, 0}, 
+                   (v3f){uv.max.x, uv.max.y, uv.min.z}, 
+                   color});
     
     /* Lower triangle */
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x, pos.y, 0}, (v2f){uv.min.x, uv.max.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x, pos.y, 0}, 
+                   (v3f){uv.min.x, uv.min.y, uv.min.z}, 
+                   color});
     
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x + size.x, pos.y + size.y, 0}, (v2f){uv.max.x, uv.min.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x + size.x, pos.y + size.y, 0}, 
+                   (v3f){uv.max.x, uv.max.y, uv.min.z}, 
+                   color});
     
-    Array_push(array, &(TexturedVertex)
-               {(v3f){pos.x, pos.y + size.y, 0}, (v2f){uv.min.x, uv.min.y}, color});
+    Array_push(array, &(TexturedVertex){
+                   (v3f){pos.x, pos.y + size.y, 0}, 
+                   (v3f){uv.min.x, uv.max.y, uv.min.z}, 
+                   color});
 }
 
 void xrender2d_produce_vertices(XRenderBatch *batch, 
@@ -1083,38 +1147,47 @@ void xrender2d_produce_vertices(XRenderBatch *batch,
                 v2f pos = c->rect.position;
                 v2f size = c->rect.size;
                 v4f color = c->rect.color;
-                rect2f uv = xrender2d.sprite_white.uv;
-                xrender2d_push_rect_vertices(texVertices, pos, size, uv, color);
+                rect3f uvs = sprite_white.uvs;
+                xrender2d_push_rect_vertices(texVertices, pos, size, uvs, color);
             } break;
             
             case XRenderCommandType_sprite:
             {
                 v2f pos = c->sprite.position;
                 v2f size = c->sprite.size;
-                rect2f uv = c->sprite.sprite.uv;
+                rect3f uvs = c->sprite.sprite.uvs;
                 v4f color = c->sprite.color;
-                xrender2d_push_rect_vertices(texVertices, pos, size, uv, color);
+                xrender2d_push_rect_vertices(texVertices, pos, size, uvs, color);
             } break;
             
             case XRenderCommandType_text:
             {
-                v2f pos   = c->text.position;
-                v4f color = c->text.color;
-                
+                u32 lastCodePoint = 0;
                 wchar_t *at = c->text.text;
-                while (*at != 0)
-                {
-                    XSprite *sprite = xglyph_get(&c->text.font->glyphs, *at);
-                    if (sprite)
-                    {
-                        v2f size = sprite->size;
-                        rect2f uv = sprite->uv;
+                v4f color = c->text.color;
+                v2f pos = c->text.position;
+                while (*at != 0) {
+                    XFontGlyph *glyph = c->text.font->glyphs + c->text.font->glyphIndexFromCodePoint[*at];
+                    if (glyph) {
+                        XSprite *sprite = &glyph->sprite;
+                        v2i dim = sprite->dim;
+                        rect3f uvs = sprite->uvs;
+                        u32 codePoint = (u32)*at;
                         
-                        v2f glyph_pos = sub2f(pos, sprite->align);
+                        /* Advance based on kerning */
+                        if (lastCodePoint) {
+                            pos.x += c->text.font->horizontalAdvance[lastCodePoint*c->text.font->maxGlyphCount + codePoint];
+                        }
                         
-                        xrender2d_push_rect_vertices(texVertices, glyph_pos, size, uv, color);
+                        /* glyph alignments */
+                        v2f glyph_pos = pos;
+                        glyph_pos.x -= sprite->align.x*dim.x;
                         
-                        pos.x += size.x + sprite->align.x;
+                        glyph_pos.y -= dim.y - sprite->align.y*dim.y;
+                        glyph_pos.y += c->text.font->metrics.tmAscent;
+                        
+                        xrender2d_push_rect_vertices(texVertices, glyph_pos, (v2f){(f32)dim.x,(f32)dim.y}, uvs, color);
+                        lastCodePoint = codePoint;
                     }
                     
                     ++at;
@@ -1136,34 +1209,32 @@ void xrender2d_update_line_pass(void)
 {
     mat4f matrixProjection =
     {
-        2.0f / xd11.back_buffer_size.x, 0, 0, -1,
-        0, -2.0f / xd11.back_buffer_size.y, 0, 1.f,
+        2.0f / xd11.bbDim.x, 0, 0, -1,
+        0, -2.0f / xd11.bbDim.y, 0, 1.f,
         0, 0, .001f, 0,
         0, 0, 0, 1,
     };
     
     /* Update constant buffers */
-    xd11_buf cbuffer = xrender2d.pass_lines.vs_cbuffers[0];
+    ID3D11Buffer *cbuffer = xrender2d.pass_lines.vShaderCBuffers[0];
     xd11_update_subres(cbuffer, &matrixProjection);
     
     /* Set render target */
-    xd11_set_render_target(xrender2d.pass_lines.target_view, xrender2d.pass_lines.depth_stencil.view);
+    xd11_set_render_target(xrender2d.pass_lines.targetView, xrender2d.pass_lines.depthStencil.view);
     
     /* Clear */
-    xd11_clear_rtv(xrender2d.pass_lines.target_view, xrender2d.clear_color);
-    xd11_clear_dsv(xrender2d.pass_lines.depth_stencil.view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
+    xd11_clear_rtv(xrender2d.pass_lines.targetView, xrender2d.clear_color);
+    xd11_clear_dsv(xrender2d.pass_lines.depthStencil.view, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 0, 0);
     
-    /* Update viewport and scissor rect*/
+    /* Update viewport */
     Array_set(xrender2d.pass_lines.viewports, 0, 
-              &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
+              &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
     
-    Array_set(xrender2d.pass_lines.scissors, 0,
-              &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
     
     LineVertex data[2] =
     {
         {{0,0,0}, {1,1,1,1}},
-        {{xd11.back_buffer_size.x,xd11.back_buffer_size.y,0}, {1,1,1,1}},
+        {{xd11.bbDim.x,xd11.bbDim.y,0}, {1,1,1,1}},
     };
 }
 
@@ -1171,46 +1242,43 @@ void xrender2d_update_sprite_pass(void)
 {
     mat4f matrixProjection =
     {
-        2.0f / xd11.back_buffer_size.x, 0, 0, -1,
-        0, -2.0f / xd11.back_buffer_size.y, 0, 1.f,
+        2.0f / xd11.bbDim.x, 0, 0, -1,
+        0, -2.0f / xd11.bbDim.y, 0, 1.f,
         0, 0, .001f, 0,
         0, 0, 0, 1,
     };
     
-    xd11_update_subres(xrender2d.pass_sprites.vs_cbuffers[0], &matrixProjection);
+    xd11_update_subres(xrender2d.pass_sprites.vShaderCBuffers[0], &matrixProjection);
     
     /* Update viewport and scissor rect*/
     Array_set(xrender2d.pass_sprites.viewports, 0,
-              &(D3D11_VIEWPORT){0,0,xd11.back_buffer_size.x,xd11.back_buffer_size.y, 0, 1});
-    
-    Array_set(xrender2d.pass_sprites.scissors, 0,
-              &(D3D11_RECT){0,0,(LONG)xd11.back_buffer_size.x,(LONG)xd11.back_buffer_size.y});
+              &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
 }
 
 void xd11_resized(void)
 {
     /* Release target views */
     for (u32 i=0; i<xrender2d.target_view_count; ++i)
-        ID3D11RenderTargetView_Release((xd11_tgv)xrender2d.target_views[i]);
+        ID3D11RenderTargetView_Release((ID3D11RenderTargetView *)xrender2d.target_views[i]);
     
     /* Default Target Depth Stencil Texture and View */
     ID3D11DepthStencilView_Release(xrender2d.target_default.depth_stencil.view);
     ID3D11Texture2D_Release       (xrender2d.target_default.depth_stencil.texture);
     
     /* Lines and XSprites passes pointers */
-    xrender2d.pass_lines.depth_stencil.view = 0;
-    xrender2d.pass_lines.depth_stencil.texture = 0;
-    xrender2d.pass_sprites.depth_stencil.view = 0;
-    xrender2d.pass_sprites.depth_stencil.texture = 0;
+    xrender2d.pass_lines.depthStencil.view = 0;
+    xrender2d.pass_lines.depthStencil.texture = 0;
+    xrender2d.pass_sprites.depthStencil.view = 0;
+    xrender2d.pass_sprites.depthStencil.texture = 0;
     
     /* Default Target Texture */
     ID3D11Texture2D_Release(xrender2d.target_default.texture);
     
     /* Resize the swapchain buffers */
-    IDXGISwapChain_ResizeBuffers(xd11.swap_chain,
+    IDXGISwapChain_ResizeBuffers(xd11.swapChain,
                                  2, 
-                                 (UINT)xd11.back_buffer_size.x,
-                                 (UINT)xd11.back_buffer_size.y, 
+                                 (UINT)xd11.bbDim.x,
+                                 (UINT)xd11.bbDim.y, 
                                  DXGI_FORMAT_R8G8B8A8_UNORM, 
                                  0);
     
@@ -1220,8 +1288,8 @@ void xd11_resized(void)
     /* Create default target depth stencil texture */
     xrender2d.target_default.depth_stencil.texture = xd11_texture2d((D3D11_TEXTURE2D_DESC)
                                                                     {
-                                                                        (s32)xd11.back_buffer_size.x,
-                                                                        (s32)xd11.back_buffer_size.y,
+                                                                        (s32)xd11.bbDim.x,
+                                                                        (s32)xd11.bbDim.y,
                                                                         0, 
                                                                         1,
                                                                         DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -1244,26 +1312,24 @@ void xd11_resized(void)
                                 });
     
     /* Lines and XSprites passes pointers */
-    xrender2d.pass_lines.depth_stencil.view = xrender2d.target_default.depth_stencil.view;
-    xrender2d.pass_lines.depth_stencil.texture = xrender2d.target_default.depth_stencil.texture;
-    xrender2d.pass_sprites.depth_stencil.view = xrender2d.target_default.depth_stencil.view;
-    xrender2d.pass_sprites.depth_stencil.texture = xrender2d.target_default.depth_stencil.texture;
+    xrender2d.pass_lines.depthStencil.view = xrender2d.target_default.depth_stencil.view;
+    xrender2d.pass_lines.depthStencil.texture = xrender2d.target_default.depth_stencil.texture;
+    xrender2d.pass_sprites.depthStencil.view = xrender2d.target_default.depth_stencil.view;
+    xrender2d.pass_sprites.depthStencil.texture = xrender2d.target_default.depth_stencil.texture;
     
     /* Create  render target view */
     xrender2d.target_views[0] = xd11_target_view(xrender2d.target_default.texture);
     
     /* Lines and XSprites passes Target view pointers */
-    xrender2d.pass_sprites.target_view = xrender2d.target_views[0];
-    xrender2d.pass_lines.target_view = xrender2d.target_views[0];
+    xrender2d.pass_sprites.targetView = xrender2d.target_views[0];
+    xrender2d.pass_lines.targetView = xrender2d.target_views[0];
 }
 
-u8 *xrender2d_load_png(wchar_t *path, v2i *dim, bool premulalpha)
-{
+u8 *xrender2d_load_png(wchar_t *path, v2i *dim) {
     u8 *r, *rowDst, *rowSrc;
     int w,h, i,j, nrChannels, dataSize;
     char *asciiPath;
     u32 *pxDst, *pxSrc, cr,cg,cb,ca;
-    f32 realA;
     
     r=0;
     asciiPath = xstrtoascii(path);
@@ -1288,13 +1354,15 @@ u8 *xrender2d_load_png(wchar_t *path, v2i *dim, bool premulalpha)
                 cg = (*pxSrc >> 8) & 0xFF;
                 cb = (*pxSrc >> 0) & 0xFF;
                 ca = (*pxSrc >> 24) & 0xFF;
+#if 0
                 if (premulalpha)
                 {
-                    realA = (f32)ca / 255.0f;
+                    f32 realA = (f32)ca / 255.0f;
                     cr=(s32)(cr*realA);
                     cg=(s32)(cg*realA);
                     cb=(s32)(cb*realA);
                 }
+#endif
                 *pxDst = ((cr<<16) | (cg<<8) | (cb<<0) | (ca<<24));
                 pxDst++;
                 pxSrc++;
@@ -1310,8 +1378,183 @@ u8 *xrender2d_load_png(wchar_t *path, v2i *dim, bool premulalpha)
     return r;
 }
 
-void xrender2d_blit_simple_unchecked(u8 *dst, v2i dest_size,
-                                     u8 *src, v2i at, v2i dim)
+XSprite xrender2d_sprite_from_bytes(u8 *b, v2i dim) {
+    XSprite r = {0};
+    r.dim = dim;
+    r.uvs = xd11_texarray_put(&xrender2d.textures, b, dim);
+    return r;
+}
+
+XSprite xrender2d_sprite_from_png(wchar_t *path) {
+    XSprite r;
+    v2i dim;
+    u8 *b;
+    
+    memset(&r, 0, sizeof(r));
+    b = xrender2d_load_png(path, &dim);
+    if (b)
+    {
+        r = xrender2d_sprite_from_bytes(b, dim);
+        xfree(b);
+    }
+    return r;
+}
+
+XFont *
+xrender2d_font(wchar_t *path, wchar_t *name, s32 pixelHeight)
+{
+    XFont *result = xalloc(sizeof *result);
+    
+    /* Init the atlas */
+    v2i atlasDim = xrender2d.textures.dim;
+    s32 uvZ = xrender2d.textures.at;
+    xtexture_atlas_init(&result->atlas, atlasDim, uvZ);
+    /* Allocate space for the cpu bytes */
+    result->atlasBytes = xalloc(atlasDim.x*atlasDim.y*4);
+    
+    AddFontResourceExW(path, FR_PRIVATE, 0);
+    result->handle = CreateFontW(pixelHeight, 0, 0, 0,
+                                 FW_NORMAL, 
+                                 false, 
+                                 false, 
+                                 false,
+                                 DEFAULT_CHARSET,
+                                 OUT_DEFAULT_PRECIS, 
+                                 CLIP_DEFAULT_PRECIS, 
+                                 CLEARTYPE_QUALITY,
+                                 DEFAULT_PITCH|FF_DONTCARE,
+                                 name);
+    assert(result->handle && result->handle != INVALID_HANDLE_VALUE);
+    
+    SelectObject(globalFontDeviceContext, result->handle);
+    
+    
+    SelectObject(globalFontDeviceContext, result->bitmap);
+    GetTextMetricsW(globalFontDeviceContext, &result->metrics);
+    
+    result->charAvgWidth = (f32)result->metrics.tmAveCharWidth;
+    result->lineHeight = (f32)result->metrics.tmAscent + (f32)result->metrics.tmDescent;
+    
+    result->minCodePoint = INT_MAX;
+    result->maxCodePoint = 0;
+    
+    result->maxGlyphCount = 350;
+    result->glyphCount = 0;
+    
+    u32 glyphIndexFromCodePointSize = ONE_PAST_MAX_FONT_CODEPOINT*sizeof(u32);
+    result->glyphIndexFromCodePoint = (u32 *)xalloc(glyphIndexFromCodePointSize);
+    memset(result->glyphIndexFromCodePoint, 0, glyphIndexFromCodePointSize);
+    
+    result->glyphs = (XFontGlyph *)xalloc(sizeof(XFontGlyph)*result->maxGlyphCount);
+    u32 horizontalAdvanceSize = sizeof(f32)*result->maxGlyphCount*result->maxGlyphCount;
+    result->horizontalAdvance = (f32 *)xalloc(horizontalAdvanceSize);
+    memset(result->horizontalAdvance, 0, horizontalAdvanceSize);
+    
+    result->onePastHighestCodepoint = 0;
+    
+    // NOTE(casey): Reserve space for the null glyph
+    result->glyphCount = 1;
+    result->glyphs[0].unicodeCodePoint = 0;
+    
+    /* D11 some glyphs from the ASCII range */
+    for (u32 i=32; i<=255; ++i)
+    {
+        result->glyphIndexFromCodePoint[i] = i;
+        result->glyphs[i].unicodeCodePoint = i;
+        result->glyphs[i].sprite = xrender2d_font_glyph(result, i);
+    }
+    
+    /* Put the texture into the array */
+    result->atlasUvs = xd11_texarray_put(&xrender2d.textures, 
+                                         result->atlasBytes, 
+                                         atlasDim);
+    
+    xfree(result->atlasBytes);
+    
+    xstrcpy(result->path, MAX_PATH, path);
+    
+    /* FinalizeFontKerning */
+    DWORD KerningPairCount = GetKerningPairsW(globalFontDeviceContext, 0, 0);
+    
+    KERNINGPAIR *KerningPairs = (KERNINGPAIR *)xalloc(KerningPairCount*sizeof(KERNINGPAIR));
+    
+    GetKerningPairsW(globalFontDeviceContext, KerningPairCount, KerningPairs);
+    
+    for (DWORD KerningPairIndex = 0;
+         KerningPairIndex < KerningPairCount;
+         ++KerningPairIndex)
+    {
+        KERNINGPAIR *Pair = KerningPairs + KerningPairIndex;
+        if ((Pair->wFirst < ONE_PAST_MAX_FONT_CODEPOINT) &&
+            (Pair->wSecond < ONE_PAST_MAX_FONT_CODEPOINT))
+        {
+            u32 First = result->glyphIndexFromCodePoint[Pair->wFirst];
+            u32 Second = result->glyphIndexFromCodePoint[Pair->wSecond];
+            if ((First != 0) && (Second != 0))
+            {
+                result->horizontalAdvance[First*result->maxGlyphCount + Second] += (f32)Pair->iKernAmount;
+            }
+        }
+    }    
+    
+    xfree(KerningPairs);
+    
+    return result;
+}
+
+function void
+initialize_font_dc(void)
+{
+    globalFontDeviceContext = CreateCompatibleDC(GetDC(0));
+    
+    BITMAPINFO Info = {0};
+    Info.bmiHeader.biSize = sizeof(Info.bmiHeader);
+    Info.bmiHeader.biWidth = MAX_FONT_WIDTH;
+    Info.bmiHeader.biHeight = MAX_FONT_HEIGHT;
+    Info.bmiHeader.biPlanes = 1;
+    Info.bmiHeader.biBitCount = 32;
+    Info.bmiHeader.biCompression = BI_RGB;
+    Info.bmiHeader.biSizeImage = 0;
+    Info.bmiHeader.biXPelsPerMeter = 0;
+    Info.bmiHeader.biYPelsPerMeter = 0;
+    Info.bmiHeader.biClrUsed = 0;
+    Info.bmiHeader.biClrImportant = 0;
+    HBITMAP Bitmap = CreateDIBSection(globalFontDeviceContext, &Info, DIB_RGB_COLORS, &globalFontBits, 0, 0);
+    SelectObject(globalFontDeviceContext, Bitmap);
+    SetBkColor(globalFontDeviceContext, RGB(0, 0, 0));
+}
+
+inline v4f
+SRGB255ToLinear1(v4f C)
+{
+    v4f Result;
+    
+    f32 Inv255 = 1.0f / 255.0f;
+    
+    Result.r = sq(Inv255*C.r);
+    Result.g = sq(Inv255*C.g);
+    Result.b = sq(Inv255*C.b);
+    Result.a = Inv255*C.a;
+    
+    return(Result);
+}
+
+inline v4f
+Linear1ToSRGB255(v4f C)
+{
+    v4f Result;
+    
+    f32 One255 = 255.0f;
+    
+    Result.r = One255*sqrtf(C.r);
+    Result.g = One255*sqrtf(C.g);
+    Result.b = One255*sqrtf(C.b);
+    Result.a = One255*C.a;
+    
+    return(Result);
+}
+
+void blit_unchecked(u8 *dst, v2i dest_size, u8 *src, v2i at, v2i dim)
 {
     u8 *rowSrc, *rowDst;
     u32 *pxSrc, *pxDst;
@@ -1334,249 +1577,250 @@ void xrender2d_blit_simple_unchecked(u8 *dst, v2i dest_size,
     }
 }
 
-XSprite xrender2d_sprite_from_bytes(XTextureAtlas *a, u8 *b, v2i dim)
-{
-    s32 m;
-    u8 *dst, *src;
-    XSprite r;
-    
-    m = 1;
-    
-    if ((a->at.x + dim.x + m) > a->texture.size.x)
-        a->at = (v2i){0, a->bottom};
-    
-    if (m+a->bottom < (a->at.y + dim.y))
-        a->bottom = a->at.y + dim.y + m;
-    
-    assert(a->bottom <= a->texture.size.y);
-    
-    dst = a->bytes;
-    src = b;
-    xrender2d_blit_simple_unchecked(a->bytes, a->texture.size, src, a->at, dim);
-    
-    r.uv.min = (v2f){a->at.x / (f32)a->texture.size.x,
-        ( (a->at.y + dim.y) ) / (f32)a->texture.size.y};
-    
-    r.uv.max = (v2f){(a->at.x + dim.x) / (f32)a->texture.size.x, 
-        ( a->at.y ) / (f32)a->texture.size.y};
-    
-    r.size = ini2fs(dim.x,dim.y);
-    
-    a->at.x += dim.x+m;
-    
-    return r;
-}
 
-XSprite xrender2d_sprite_from_png(XTextureAtlas *a, wchar_t *path, bool premulalpha)
-{
-    XSprite r;
-    v2i dim;
-    u8 *b;
+XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
+    v2f alignPercentage;
+    XSprite r = {0};
     
-    memset(&r, 0, sizeof(r));
-    b = xrender2d_load_png(path, &dim, premulalpha);
-    if (b)
-    {
-        r = xrender2d_sprite_from_bytes(a, b, dim);
-        xfree(b);
-    }
-    return r;
-}
-
-XFont xrender2d_font(XTextureAtlas *atlas, wchar_t *path, wchar_t *name, int heightpoints)
-{
-    XFont result;
-    memset(&result, 0, sizeof(result));
+    if (font->minCodePoint > codePoint)
+        font->minCodePoint = codePoint;
     
-    v2i maxGlyphSize;
-    s32 maxDescent;
+    if (font->maxCodePoint < codePoint)
+        font->maxCodePoint = codePoint;
     
-    s32 i;
+    u32 glyphIndex = font->glyphIndexFromCodePoint[codePoint];
+    memset(globalFontBits, 0x00, MAX_FONT_WIDTH*MAX_FONT_HEIGHT*sizeof(u32));
     
-    wchar_t c;
-    XSprite *v = 0;
+    wchar_t cheesePoint = (wchar_t)codePoint;
     
-    /* Add font resource to Windows */
-    s32 temp = AddFontResourceW(path);
-    assert(temp == 1);
-    
-    /* Create the font */
-    result.handle = CreateFontW(xrender2d_font_height(heightpoints), 
-                                0, 0, 0, FW_NORMAL, false, false, 
-                                false, DEFAULT_CHARSET,
-                                OUT_OUTLINE_PRECIS, CLIP_DEFAULT_PRECIS, 
-                                CLEARTYPE_QUALITY, DEFAULT_PITCH, name);
-    
-    assert(result.handle && result.handle != INVALID_HANDLE_VALUE);
-    
-    /* Create a bitmap to d11 glyphs into */
-    BITMAPINFO info = xd11_bitmap_info(xd11.glyph_maker_size, -xd11.glyph_maker_size);
-    result.bitmap = CreateDIBSection(xd11.glyph_maker_dc, &info, 
-                                     DIB_RGB_COLORS, &result.bytes, 0, 0);
-    assert(xd11.glyph_maker_size>0);
-    memset(result.bytes, 0, xd11.glyph_maker_size*xd11.glyph_maker_size*4);
-    
-    /* Configure the bitmap drawing to use black and white */
-    SelectObject(xd11.glyph_maker_dc, result.bitmap);
-    SelectObject(xd11.glyph_maker_dc, result.handle);
-    SetBkColor(xd11.glyph_maker_dc, RGB(0,0,0));
-    SetTextColor(xd11.glyph_maker_dc, RGB(255,255,255));
-    
-    /* Get text metrics for font */
-    TEXTMETRICW metrics = {0};
-    GetTextMetricsW(xd11.glyph_maker_dc, &metrics);
-    result.metrics = metrics;
-    result.lineadvance = (f32)metrics.tmHeight - metrics.tmInternalLeading;
-    /* Use this if nothing else, but search for better value later */
-    result.charwidth = (f32)metrics.tmAveCharWidth;
-    
-    /* D11 some glyphs from the ASCII range */
-    maxGlyphSize.x = maxGlyphSize.y = maxDescent = -10000;
-    for (i=32; i<=126; ++i)
-    {
-        c=(wchar_t)i;
-        
-        rect2f tightBounds;
-        s32 tightDescent;
-        
-        v = xalloc(sizeof *v);
-        *v = xrender2d_font_glyph(atlas, result, c, &tightBounds, &tightDescent);
-        
-        /* Spaces wont have anything so tightBounds wont be found  */
-        if (tightBounds.max.x!=0 && tightBounds.max.y!=0)
-        {
-            /* Calculate tight size */
-            v2i tightSize =
-            {
-                (s32)(tightBounds.max.x - tightBounds.min.x),
-                (s32)(tightBounds.max.y - tightBounds.min.y)
-            };
-            
-            /* Book keep maximum glyph size and maximum descent */
-            if (maxGlyphSize.x < tightSize.x) maxGlyphSize.x = tightSize.x;
-            if (maxGlyphSize.y < tightSize.y) maxGlyphSize.y = tightSize.y;
-            if (maxDescent < tightDescent) maxDescent = tightDescent;
-        }
-        
-        /* Set the glyph in the hash table */
-        xglyph_set(&result.glyphs, c, v);
-    }
-    
-    result.lineadvance = (f32)maxGlyphSize.y;
-    if (maxGlyphSize.x > 0)
-        result.charwidth = (f32)maxGlyphSize.x;
-    
-    result.maxdescent = (f32)maxDescent;
-    xstrcpy(result.path, MAX_PATH, path);
-    
-    return result;
-}
-
-XSprite xrender2d_font_glyph(XTextureAtlas *atlas, XFont font, wchar_t c, 
-                             rect2f *tBounds, s32 *tDescent)
-{
-    u8 *bytes, *dstRow, *srcRow;
-    s32 charsz, i,j, x,y;
-    u32 *dstPx, *srcPx, *px, color, a, pre_step;
-    v2f dim, align;
-    XSprite r;
     SIZE size;
-    rect2f bounds;
+    GetTextExtentPoint32W(globalFontDeviceContext, &cheesePoint, 1, &size);
     
-    wchar_t full_char[2] = {c, 0};
+    s32 preStepX = 128;
     
-    pre_step = (s32)(0.3f*font.lineadvance);
-    
-    GetTextExtentPoint32W(xd11.glyph_maker_dc, full_char, 1, &size);
-    align = (v2f){0,0};
-    dim = ini2fs(size.cx,size.cy);
-    charsz=(s32)wcslen(full_char);
-    bounds = inir2f(0,0, dim.x, dim.y);
-    tBounds->min.x=tBounds->min.y=1000000;
-    tBounds->max.x=tBounds->max.y=-1000000;
-    
-    TextOutW(xd11.glyph_maker_dc, pre_step,0, full_char, charsz);
-    
-    bool foundTBox = false;
-    for (j=0; j<xd11.glyph_maker_size; ++j)
+    s32 boundWidth = size.cx + 2*preStepX;
+    if (boundWidth > MAX_FONT_WIDTH)
     {
-        for (i=0; i<xd11.glyph_maker_size; ++i)
-        {
-            px = (u32 *)((u8 *)font.bytes + j*xd11.glyph_maker_size*4 + i*4);
-            if (*px != 0)
-            {
-                foundTBox = true;
-                if (tBounds->min.x>i) tBounds->min.x=(f32)i;
-                if (tBounds->min.y>j) tBounds->min.y=(f32)j;
-                if (tBounds->max.x<i) tBounds->max.x=(f32)i;
-                if (tBounds->max.y<j) tBounds->max.y=(f32)j;
+        boundWidth = MAX_FONT_WIDTH;
+    }
+    
+    int boundHeight = size.cy;
+    if (boundHeight > MAX_FONT_HEIGHT)
+    {
+        boundHeight = MAX_FONT_HEIGHT;
+    }
+    
+    SetTextColor(globalFontDeviceContext, RGB(255, 255, 255));
+    TextOutW(globalFontDeviceContext, preStepX, 0, &cheesePoint, 1);
+    
+    s32 minX = 10000;
+    s32 minY = 10000;
+    s32 maxX = -10000;
+    s32 maxY = -10000;
+    
+    u32 *row = (u32 *)globalFontBits + (MAX_FONT_HEIGHT - 1)*MAX_FONT_WIDTH;
+    for(s32 y=0; y<boundHeight; ++y) {
+        u32 *pixel = row;
+        for (s32 x=0; x<boundWidth; ++x) {
+            if (*pixel != 0) {
+                if (minX > x) minX = x;
+                if (minY > y) minY = y;
+                if (maxX < x) maxX = x;
+                if (maxY < y) maxY = y;
             }
+            ++pixel;
+        }
+        row -= MAX_FONT_WIDTH;
+    }
+    
+    f32 kerningChange = 0;
+    if (minX <= maxX) {
+        int width = (maxX - minX) + 1;
+        int height = (maxY - minY) + 1;
+        
+        int resultWidth = width + 2;
+        int resultHeight = height + 2;
+        
+        r.dim = (v2i){resultWidth, resultHeight};
+        s32 pitch = resultWidth * 4;
+        void *memory = xalloc(resultHeight*pitch);
+        
+        /* For some reason Casey decided to make this overcomplicated
+;  scenario where he fills the bitmap bottom up, so I can't
+ ;  understand this and gave up on trying to flip it. */
+        u8 *destRow = (u8 *)memory + (resultHeight-1-1)*pitch;
+        u32 *sourceRow = (u32 *)globalFontBits + (MAX_FONT_HEIGHT-1-minY)*MAX_FONT_WIDTH;
+        for (s32 y=minY; y<=maxY; ++y) {
+            u32 *source = (u32 *)sourceRow + minX;
+            u32 *dest = (u32 *)destRow + 1;
+            for (s32 x=minX; x<=maxX; ++x) {
+                u32 pixel = *source;
+                f32 gray = (f32)(pixel & 0xFF);
+                v4f texel = {255.0f, 255.0f, 255.0f, gray};
+                //texel = SRGB255ToLinear1(texel);
+                //texel.rgb *= texel.a;
+                //texel = Linear1ToSRGB255(texel);
+                *dest++ = (((u32)(texel.a + 0.5f) << 24) |
+                           ((u32)(texel.r + 0.5f) << 16) |
+                           ((u32)(texel.g + 0.5f) << 8) |
+                           ((u32)(texel.b + 0.5f) << 0));
+                ++source;
+            }
+            
+            destRow -= pitch;
+            sourceRow -= MAX_FONT_WIDTH;
+        }
+        
+        alignPercentage.x = (1.0f) / (f32)resultWidth;
+        alignPercentage.y = (1.0f + (maxY - (boundHeight - font->metrics.tmDescent))) /
+        (f32)resultHeight;
+        
+        kerningChange = (f32)(minX - preStepX);
+        
+        XTextureAtlasCoords coords = xtexture_atlas_put(&font->atlas, r.dim);
+        r.uvs = coords.uvs;
+        
+        blit_unchecked(font->atlasBytes, font->atlas.dim,
+                       memory, coords.at, r.dim);
+        
+        /* Continue the madness by flipping the uvs */
+        f32 tempMinY = r.uvs.min.y;
+        r.uvs.min.y = r.uvs.max.y;
+        r.uvs.max.y = tempMinY;
+        
+        r.align = alignPercentage;
+        
+        xfree(memory);
+        
+    }
+    
+    INT thisWidth;
+    GetCharWidth32W(globalFontDeviceContext, codePoint, codePoint, &thisWidth);
+    f32 charAdvance = (f32)thisWidth;
+    
+    for (u32 otherGlyphIndex = 0;
+         otherGlyphIndex < font->maxGlyphCount;
+         ++otherGlyphIndex) {
+        
+        font->horizontalAdvance[glyphIndex*font->maxGlyphCount + otherGlyphIndex] 
+            += charAdvance - kerningChange;
+        
+        if (otherGlyphIndex != 0) {
+            font->horizontalAdvance[otherGlyphIndex*font->maxGlyphCount + glyphIndex]
+                += kerningChange;
         }
     }
     
-    if (foundTBox) {
-        --tBounds->min.x;
-        --tBounds->min.y;
-        ++tBounds->max.x;
-        ++tBounds->max.y;
-        
-        dim.x = tBounds->max.x-tBounds->min.x+1;
-        dim.y = tBounds->max.y-tBounds->min.y+1;
-        
-        *tDescent = font.metrics.tmDescent-(font.metrics.tmHeight-(s32)tBounds->max.y);
-        align.x = tBounds->min.x - pre_step;
-        align.y = (f32)font.metrics.tmAscent-tBounds->min.y-font.metrics.tmHeight/2;
-    }
-    
-    bytes = (u8 *)xalloc((s32)(dim.x*dim.y)*4);
-    
-    if (foundTBox) {
-        dstRow = bytes;
-        srcRow = ((u8 *)font.bytes + (s32)tBounds->min.y*xd11.glyph_maker_size*4 + (s32)tBounds->min.x*4);
-        for (y=(s32)tBounds->min.y; y<(s32)tBounds->max.y; ++y)
-        {
-            srcPx = (u32 *)srcRow;
-            dstPx = (u32 *)dstRow;
-            for (x=(s32)tBounds->min.x; x<(s32)tBounds->max.x; ++x)
-            {
-                color = *srcPx++;
-                a = ((color >> 16) & 0xff);
-                *dstPx++ =  RGBA(255,255,255, a);
-            }
-            dstRow += 4*(s32)dim.x;
-            srcRow += 4*xd11.glyph_maker_size;
-        }
-    }
-    
-    r = xrender2d_sprite_from_bytes(atlas, bytes, ini2if(dim.x,dim.y));
-    r.align = align;
-    xfree(bytes);
     return r;
 }
 
-s32 xrender2d_font_height(s32 pointHeight)
+void xrender2d_font_free(XFont *f)
 {
-    s32 result = MulDiv(pointHeight, 
-                        GetDeviceCaps(xd11.glyph_maker_dc, LOGPIXELSY), 
-                        GetDeviceCaps(xd11.glyph_maker_dc, LOGPIXELSX));
-    return result;
+    xfree(f->glyphs);
+    xfree(f->horizontalAdvance);
+    xfree(f->glyphIndexFromCodePoint);
+    
+    DeleteObject(f->bitmap);
+    DeleteObject(f->handle);
+    RemoveFontResourceW(f->path);
+    
+    xfree(f);
 }
 
-void xrender2d_font_free(XFont f)
-{
-    s32 i;
-    XGlyphHashNode *n;
-    
-    DeleteObject(f.bitmap);
-    DeleteObject(f.handle);
-    RemoveFontResourceW(f.path);
-    
-    for (i=0; i<XGLYPH_HASH_LENGTH; ++i)
-        for (n=f.glyphs.storage[i]; n; n=n->next)
+v2f
+xrender2d_font_dim(XFont *font, wchar_t *text) {
+    u32 lastCodePoint = 0;
+    wchar_t *at = text;
+    v2f atP = (v2f){0,font->lineHeight};
+    while (*at != 0)
     {
-        xfree(n);
-        xfree(n->value);
+        u32 codePoint = (u32)*at;
+        if (lastCodePoint) 
+            atP.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
+        lastCodePoint = codePoint;
+        ++at;
     }
+    
+    atP.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + 0];
+    
+    return (v2f){atP.x, atP.y};
 }
+
+
+/* NOTE: It is assumed that lines buffer will hold maxLineCount strings of maxLineCharCount length.
+;        Is is assumed that maxLineCharCount is big enough to fit a line as big as maxWidth.
+;        This function will not break lines based on maxLineCharCount!
+;
+;        Each line will break at the last space before the next word would make the width of the line
+;        be past maxWidth. Lines will hold an array with the resulting lines and lineCount will hold
+;        the number of lines the string got broken into. */
+
+void xrender2d_break_text(wchar_t *lines, u32 *lengths, u32 *lineCount,
+                          u32 maxLineCount, u32 maxLineCharCount,
+                          XFont *font, wchar_t *str, f32 maxWidth) {
+    wchar_t *lastSpace = 0;
+    u32 lastCodePoint = 0;
+    wchar_t *at = str;
+    u32 lineCharIndex = 0;
+    u32 lineLastSpace = 0;
+    
+    *lineCount = 0;
+    memset(lines, 0, maxLineCount*maxLineCharCount*sizeof(wchar_t));
+    
+    /* Break text into lines */
+    v2f p = {0,0};
+    wchar_t *lineStart = at;
+    while (*at != 0) {
+        u32 codePoint = (u32)*at;
+        
+        /* If there was a glyph before this, advance the position based on kerning */
+        if (lastCodePoint)
+            p.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
+        
+        /* If the position is greated than the maximum width allowed */
+        if (p.x > maxWidth) {
+            /* Reset the x position and advance the y position */
+            p.x = 0;
+            
+            /* Return the iterator to one past the last space position */
+            at = lastSpace;
+            ++at;
+            
+            /* Update the code point */
+            codePoint = (u32)*at;
+            
+            /* Make current line stop at last space */
+            *(lines + *lineCount * maxLineCharCount + (lineLastSpace-1)) = 0; 
+            
+            /* Save the length */
+            lengths[*lineCount] = (u32)(at - lineStart);
+            lineStart = at;
+            
+            /* Advance to next line */
+            *lineCount = *lineCount + 1;
+            
+            lineCharIndex = 0;
+        }
+        
+        *(lines + *lineCount * maxLineCharCount + lineCharIndex++) = *at;
+        
+        /* Save the lastSpace position */
+        if (codePoint == 32) {
+            lastSpace = at;
+            lineLastSpace = lineCharIndex;
+        }
+        
+        /* Save codePoint */
+        lastCodePoint = codePoint;
+        
+        ++at;
+    }
+    
+    /* Save the last length */
+    lengths[*lineCount] = (u32)(at - lineStart);
+    
+    *lineCount = *lineCount + 1;
+}
+
 
 #endif

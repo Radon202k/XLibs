@@ -40,7 +40,7 @@ typedef union
     XKey all[35];
     struct {
         XKey up, left, down, right,
-        backspace, alt, control, space, f1,
+        tab, enter, backspace, alt, control, space, f1,
         a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z;
     };
 } XKeys;
@@ -64,13 +64,22 @@ typedef struct
 
 typedef struct
 {
-    bool input_char_entered;
-    wchar_t input_char;
+    wchar_t name[512];
+    u32 fileCount;
+    XFile *files;
+} XDirectory;
+
+typedef struct
+{
+    bool inputCharEntered;
+    wchar_t inputChar;
+    
+    HCURSOR lastCursorSet;
+    HCURSOR cursorSet;
     
     XKeys key;
     XMouse mouse;
     HWND wh;
-    HCURSOR ch;
     u64 pf;
     
 } XWindows;
@@ -96,7 +105,7 @@ s32   xwin_clipboard_paste(wchar_t *text, int maxLength);
 void  xwin_path(wchar_t *path, u32 size);
 void  xwin_pathascii(char *path, u32 size);
 XFile xwin_file_read(wchar_t *path);
-bool  xwin_file_write(wchar_t *path, wchar_t *data, u32 size);
+bool  xwin_file_write(wchar_t *path, u8 *data, u32 size);
 void  xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename);
 void  xwin_path_abs_ascii(char *dst, u32 dstsize, char *filename);
 
@@ -116,7 +125,7 @@ IMPLEMENTATION
 void xwin_initialize(XWindowConfig config)
 {
     xwin.wh = config.windowHandle;
-    xwin.ch = config.cursor;
+    xwin.cursorSet = config.cursor;
     
     LARGE_INTEGER pf;
     QueryPerformanceFrequency(&pf);
@@ -163,8 +172,8 @@ void xwin_update(bool topdown, v2f windim)
     xwin.mouse.wheel = 0;
     
     // Clear the input char
-    xwin.input_char = 0;
-    xwin.input_char_entered = false;
+    xwin.inputChar = 0;
+    xwin.inputCharEntered = false;
 }
 
 #define XWINMAIN() int APIENTRY WinMain(HINSTANCE inst, \
@@ -172,18 +181,15 @@ HINSTANCE instprev, \
 PSTR cmdline, \
 int cmdshow)
 
-#define XWNDPROC                        \
-case WM_SETCURSOR: {    \
-SetCursor(xwin.ch);  \
-} break;                \
-case WM_DESTROY:        \
-case WM_CLOSE: {        \
-xd11.running = false;    \
-} break;                \
-case WM_CHAR: {                 \
-xwin.input_char = (wchar_t)wParam;   \
-xwin.input_char_entered = true;             \
-} break;                        \
+#define XWNDPROC                                \
+case WM_DESTROY:                            \
+case WM_CLOSE: {                            \
+xd11.running = false;                   \
+} break;                                    \
+case WM_CHAR: {                             \
+xwin.inputChar = (wchar_t)wParam;       \
+xwin.inputCharEntered = true;           \
+} break;                                    \
 case WM_MOUSEWHEEL: {                                                               \
 xwin.mouse.wheel = ((f32)GET_WHEEL_DELTA_WPARAM(wParam) / (f32)WHEEL_DELTA);     \
 } break;                                                                            \
@@ -196,6 +202,8 @@ if (wParam == VK_UP)              key = &xwin.key.up;            \
 else if (wParam == VK_LEFT)       key = &xwin.key.left;          \
 else if (wParam == VK_DOWN)       key = &xwin.key.down;          \
 else if (wParam == VK_RIGHT)      key = &xwin.key.right;         \
+else if (wParam == VK_TAB)        key = &xwin.key.tab;     \
+else if (wParam == VK_RETURN)     key = &xwin.key.enter;     \
 else if (wParam == VK_BACK)       key = &xwin.key.backspace;     \
 else if (wParam == VK_MENU)       key = &xwin.key.alt;           \
 else if (wParam == VK_F1)         key = &xwin.key.f1;            \
@@ -384,12 +392,13 @@ XFile xwin_file_read(wchar_t *path)
                 r.size = sz;
             }
         }
+        fclose(f);
     }
     
     return r;
 }
 
-bool xwin_file_write(wchar_t *path, wchar_t *data, u32 size)
+bool xwin_file_write(wchar_t *path, u8 *data, u32 size)
 {
     bool r = false;
     HANDLE h;
@@ -407,6 +416,62 @@ bool xwin_file_write(wchar_t *path, wchar_t *data, u32 size)
     r = true;
     CloseHandle(h);
     return r;
+}
+
+void xwin_directory_open(XDirectory *dir, wchar_t *directoryPath) {
+    WIN32_FIND_DATAW findData;
+    HANDLE findHandle;
+    
+    wchar_t searchPath[MAX_PATH];
+    xstrcpy(searchPath, MAX_PATH, directoryPath);
+    xstrcat(searchPath, MAX_PATH, L"\\*");
+    
+    findHandle = FindFirstFileW(searchPath, &findData);
+    if (findHandle == INVALID_HANDLE_VALUE) {
+        printf("Error: %lu\n", GetLastError());
+        return;
+    }
+    
+    u32 fileCount = 0;
+    do {
+        if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            fileCount++;
+        }
+    } while (FindNextFileW(findHandle, &findData));
+    
+    FindClose(findHandle);
+    
+    // Allocate memory for files
+    dir->files = xnalloc(fileCount, XFile);
+    dir->fileCount = fileCount;
+    
+    // Reset findHandle
+    findHandle = FindFirstFileW(searchPath, &findData);
+    if (findHandle == INVALID_HANDLE_VALUE) {
+        printf("Error: %lu\n", GetLastError());
+        return;
+    }
+    
+    u32 fileIndex = 0;
+    do {
+        if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
+            xstrcpy(dir->files[fileIndex].name, 512, findData.cFileName);
+            dir->files[fileIndex].exists = true;
+            dir->files[fileIndex].size = findData.nFileSizeLow;
+            dir->files[fileIndex].bytes = NULL; // You can load the file bytes later using xwin_file_read()
+            fileIndex++;
+        }
+    } while (FindNextFileW(findHandle, &findData));
+    
+    FindClose(findHandle);
+}
+
+void xwin_directory_close(XDirectory *dir) {
+    if (dir->files != NULL) {
+        free(dir->files);
+        dir->files = NULL;
+    }
+    dir->fileCount = 0;
 }
 
 /*  Copies the exe path until last slash

@@ -7,18 +7,18 @@
 
 #define T wchar_t
 
-T *  xstrnew(T *str);
-void xstrcpy(T *dest, u32 destsize, T *src);
-void xstrcps(T *dest, u32 destsize, T *src, u32 size);
-bool xstrcmp(T *stra, T *strb);
-s32  xstrlen(T *str);
-void xstrcat(T *dest, u32 destsize, T *b);
-T   *xstrint(int v);
-T   *xstrdbl(double value);
+T *  xstrmake  (T *str);
+void xstrcpy   (T *dest, u32 destsize, T *src);
+void xstrncpy  (T *dest, u32 destsize, T *src, u32 size);
+bool xstrcmp   (T *stra, T *strb);
+s32  xstrlen   (T *str);
+void xstrcat   (T *dest, u32 destsize, T *b);
+T   *xstrint   (s32 v, u32 zeroCount);
+T   *xstrdbl   (double value);
+bool xstrcmpascii (char *stra, char *strb);
+void xstrcpsascii (char *dest, u32 destsize, char *src, u32 size);
+T   *xstrascii    (char *ascii);
 
-bool xstrcmpascii(char *stra, char *strb);
-void xstrcpsascii(char *dest, u32 destsize, char *src, u32 size);
-T   *xstrascii   (char *ascii);
 
 /* End of Interface */
 
@@ -89,7 +89,7 @@ void xstrcpsascii(char *dest, u32 destSize, char *src, u32 copySize)
     strncpy_s(dest, destSize, src, copySize);
 }
 
-T *xstrfromascii(char *as)
+T *xstrascii(char *as)
 {
     T *r;
     s32 l;
@@ -114,13 +114,19 @@ char *xstrtoascii(wchar_t *string)
 }
 
 
-T *xstrfromint(int v)
+T *xstrint(s32 v, u32 zeroCount)
 {
     T *r;
     char s[50];
-    
-    sprintf_s(s, 50, "%02d", v);
-    r = xstrfromascii(s);
+    if (zeroCount == 0)
+        sprintf_s(s, 50, "%d", v);
+    else if (zeroCount == 1)
+        sprintf_s(s, 50, "%01d", v);
+    else if (zeroCount == 2)
+        sprintf_s(s, 50, "%02d", v);
+    else if (zeroCount == 3)
+        sprintf_s(s, 50, "%03d", v);
+    r = xstrascii(s);
     return r;
 }
 
@@ -130,7 +136,7 @@ T *xstrfromdbl(double v)
     char s[50];
     
     sprintf_s(s, 50, "%.6f", v);
-    r = xstrfromascii(s);
+    r = xstrascii(s);
     return r;
 }
 

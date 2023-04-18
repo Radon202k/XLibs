@@ -76,7 +76,7 @@ XWINMAIN()
     state.timer = seconds;
     
     v2i board_size = {(s32)(xd11.back_buffer_size.x/50), (s32)(xd11.back_buffer_size.y/50)};
-    state.apple = rnd2i((v2i){0,0}, board_size);
+    state.apple = rnd2i((v2i){0,0}, (v2i){board_size.x-1,board_size.y-1});
     
     while (xd11.running)
     {
@@ -131,9 +131,9 @@ XWINMAIN()
             if (piece->position.x == state.apple.x &&
                 piece->position.y == state.apple.y)
             {
-                state.apple = rnd2i((v2i){0,0}, board_size);
+                state.apple = rnd2i((v2i){0,0}, (v2i){board_size.x-1,board_size.y-1});
                 snake_push_tail(&state.snake);
-                seconds *= 0.9f;
+                seconds *= 0.98f;
             }
             
             // TODO: Check collision against tail pieces
