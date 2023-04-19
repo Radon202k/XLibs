@@ -3,6 +3,7 @@ Extra libraries for C language (In Progress)
 
 ## Dependencies ##
 * stb_image.h https://github.com/nothings/stb
+* miniaudio.h https://github.com/mackron/miniaudio
 
 ## Bare bones example ##
 
@@ -24,31 +25,99 @@ popd
 ### main.c ###
 ```c
 #define STB_IMAGE_IMPLEMENTATION
-#include "w:/libs/stb_image.h"
+#include "w:\libs\stb_image.h"
+
+#define MINIAUDIO_IMPLEMENTATION
+#include "w:/libs/miniaudio.h"
+
+// #define XD11_RELEASE_BUILD
+
+#include "w:/libs/xlibs/xbase.h"
+#include "w:/libs/xlibs/xmemory.h"
+#include "w:/libs/xlibs/xmath.h"
+#include "w:/libs/xlibs/xarray.h"
+#include "w:/libs/xlibs/xlist.h"
+#include "w:/libs/xlibs/xtable.h"
+#include "w:/libs/xlibs/xtexture_atlas.h"
+
+#include "w:/libs/xlibs/xwindows.h"
 #include "w:/libs/xlibs/xd3d11.h"
 #include "w:/libs/xlibs/xrender2d.h"
+#include "w:/libs/xlibs/xsound.h"
+#include "w:/libs/xlibs/ximgui.h"
 
-global XRenderBatch layer1;
+typedef struct Platform {
+    /* Layers or Render batches/passes */
+    XRenderBatch layers[32];
+    u32 layerIndex;
+    /* Images or Sprites/Textures */
+    XSprite images[32];
+    u32 imageIndex;
+    /* Fonts (Basically maps of glyphs to sprites and align information */
+    XFont *fonts[32];
+    u32 fontIndex;
+    /* Sound effects (Uses miniaudio.h behind the scenes) */
+    XSound sounds[32];
+    u32 soundIndex;
+} Platform;
+
+global Platform plat;
+
+// #include "plat.c"
 
 XWINMAIN()
 {
-    xd11_initialize((XD11Config){window_proc, 0, 0, L"My Window"});
-    xwin_initialize((XWindowConfig){LoadCursor(NULL, IDC_ARROW), xd11.window_handle});
-    xrender2d_initialize((v4f){.2f,.2f,.2f,1});
+    /* Initialization must happen in this order */
+    xd11_initialize((XD11Config){window_proc, 0, 0, 0, L"List Networked"});
+    xwin_initialize((XWindowConfig){LoadCursor(NULL, IDC_ARROW), xd11.wndHandle});
+    xrender2d_initialize((v4f){.02f,.02f,.02f,1});
+    xaudio_initialize();
     
-    while (xd11.running)
+    /* Load images */
     {
-        xrender2d_pre_update();
-        draw_rect(&layer1, xwin.mouse.pos, (v2f){50,50}, gol4f);
-        xrender2d_post_update(&layer1, 1);
-        xrender2d_reset_batch(&layer1);
+        wchar_t imageFullPath[260];
+        xwin_path_abs(imageFullPath, 260, L"images\\symbol1.png");
+        plat.images[plat.imageIndex++] = xrender2d_sprite_from_png(imageFullPath);
     }
-    xrender2d_shutdown();
-    xd11_shutdown();
+    
+    /* Load fonts */
+    {
+        wchar_t fontFullPath[260];
+        xwin_path_abs(fontFullPath, 260, L"fonts\\Inconsolata.ttf");
+        plat.fonts[plat.fontIndex++] = xrender2d_font(fontFullPath, L"Inconsolata", 64);
+    }
+    
+    /* Generate mip maps */
+    xd11_generate_mips(&xrender2d.textures.tex);
+    
+    /* Load sounds */
+    plat.sounds[plat.soundIndex++] = xaudio_load_mp3("sounds\\move.mp3");
+    
+    /* Account for layer */
+    plat.layerIndex++;
+    
+    while (xd11.running) {
+        /* Must be called first */
+        xrender2d_pre_update();
+        
+        /* Update and Render */
+        draw_text(plat.layers, (v2f){0,0}, xcolor[Gold], plat.fonts[0], L"My text");
+        draw_circle(plat.layers, xwin.mouse.pos, xcolor[Azure], 25);
+        draw_rect(plat.layers, (v2f){0,0}, xwin.mouse.pos, (v4f){1,0,0,0.2f});
+        draw_rect_rounded(plat.layers, xwin.mouse.pos, sub2f(xd11.bbDim, xwin.mouse.pos), (v4f){0,1,0,0.2f}, 50);
+        draw_line(plat.layers, (v2f){0,0}, xwin.mouse.pos, xcolor[Emerald]);
+        draw_arrow(plat.layers, xwin.mouse.pos, add2f(xwin.mouse.pos, mul2f(150, nrm2f(sub2f(xd11.bbDim, xwin.mouse.pos)))), xcolor[Crimson], 25);
+        
+        /* Must be called after */
+        xrender2d_post_update(plat.layers, plat.layerIndex);
+        
+        /* Reset Batches */
+        for (s32 i=0; i<plat.layerIndex; ++i)
+            xrender2d_reset_batch(plat.layers + i);
+    }
 }
 
-LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam)
-{
+LRESULT window_proc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     LRESULT result = 0;
     switch (message) {
         XWNDPROC;

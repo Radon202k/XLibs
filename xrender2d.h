@@ -520,20 +520,20 @@ draw_rect_rounded(XRenderBatch *batch, v2f pos, v2f size, v4f color, f32 radius)
     
     /* Center */
     draw_rect(batch,
-              (v2f){posXPlusRadius-1, pos.y},
+              (v2f){posXPlusRadius, pos.y},
               (v2f){floorf(size.x-2*radius)+3,size.y},
               color);
     
     /* Left strip */
     draw_rect(batch,
-              (v2f){pos.x, posYPlusRadius-1},
-              (v2f){ceilf(radius),floorf(size.y-2*radius)+3},
+              (v2f){pos.x, posYPlusRadius},
+              (v2f){ceilf(radius),floorf(size.y-2*radius)},
               color);
     
     /* Right strip */
     draw_rect(batch,
-              add2f(pos, (v2f){size.x-radius,radius-1}),
-              (v2f){radius,floorf(size.y-2*radius)+3},
+              add2f(pos, (v2f){size.x-radius,radius}),
+              (v2f){radius,floorf(size.y-2*radius)},
               color);
     
 }
@@ -1006,27 +1006,27 @@ void xrender2d_create_sprite_pass(void)
 void xrender2d_create_resources(void)
 {
     /* Create resources */
-    wchar_t full_path[512];
-    xwin_path_abs(full_path, 512, L"images/white.png");
-    v2i white_dim;
-    u8 *white_bytes = xrender2d_load_png(full_path, &white_dim);
     
-    if (!white_bytes) {
-        xd11_log("Need to have a white.png in images directory!");
-        assert(!"Need to have a white.png in images directory!");
+    /* white.png */
+    {
+        wchar_t full_path[512];
+        xwin_path_abs(full_path, 512, L"images/white.png");
+        sprite_white = xrender2d_sprite_from_png(full_path);
     }
     
-    sprite_white = xrender2d_sprite_from_bytes(white_bytes, white_dim);
+    /* circle.png */
+    {
+        wchar_t full_path[512];
+        xwin_path_abs(full_path, 512, L"images/circle.png");
+        sprite_circle = xrender2d_sprite_from_png(full_path);
+    }
     
-    sprite_white.uvs.min.x += 0.05f;
-    sprite_white.uvs.max.x -= 0.05f;
-    sprite_white.uvs.min.y += 0.05f;
-    sprite_white.uvs.max.y -= 0.05f;
-    
-    xfree(white_bytes);
-    
-    sprite_circle = xrender2d_sprite_from_png(L"images/circle.png");
-    sprite_arrow = xrender2d_sprite_from_png(L"images/arrow128.png");
+    /* arrow.png */
+    {
+        wchar_t full_path[512];
+        xwin_path_abs(full_path, 512, L"images/arrow.png");
+        sprite_arrow = xrender2d_sprite_from_png(full_path);
+    }
     
     /* Make circle quadrants */
     s32 circleWidth = sprite_circle.dim.x;
@@ -1040,29 +1040,29 @@ void xrender2d_create_resources(void)
     f32 circleQuadrantUVWidth = circleUVWidth/2;
     f32 circleQuadrantUVHeight = circleUVHeight/2;
     
-    sprite_circle_bl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y, sprite_circle.uvs.min.z};
-    sprite_circle_bl.uvs.max = (v3f){
+    sprite_circle_tl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y, sprite_circle.uvs.min.z};
+    sprite_circle_tl.uvs.max = (v3f){
         sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
         sprite_circle.uvs.min.y + circleQuadrantUVHeight,
         sprite_circle.uvs.min.z
     };
     
-    sprite_circle_tl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y + circleQuadrantUVHeight};
-    sprite_circle_tl.uvs.max = (v3f){sprite_circle.uvs.min.x + circleQuadrantUVWidth, sprite_circle.uvs.max.y};
-    
-    sprite_circle_tr.uvs.min = (v3f){
-        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
-        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
-        sprite_circle.uvs.min.z
-    };
-    sprite_circle_tr.uvs.max = (v3f){sprite_circle.uvs.max.x, sprite_circle.uvs.max.y, sprite_circle.uvs.min.z};
+    sprite_circle_bl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y + circleQuadrantUVHeight};
+    sprite_circle_bl.uvs.max = (v3f){sprite_circle.uvs.min.x + circleQuadrantUVWidth, sprite_circle.uvs.max.y};
     
     sprite_circle_br.uvs.min = (v3f){
+        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
+        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
+        sprite_circle.uvs.min.z
+    };
+    sprite_circle_br.uvs.max = (v3f){sprite_circle.uvs.max.x, sprite_circle.uvs.max.y, sprite_circle.uvs.min.z};
+    
+    sprite_circle_tr.uvs.min = (v3f){
         sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
         sprite_circle.uvs.min.y,
         sprite_circle.uvs.min.z
     };
-    sprite_circle_br.uvs.max = (v3f){
+    sprite_circle_tr.uvs.max = (v3f){
         sprite_circle.uvs.max.x, 
         sprite_circle.uvs.min.y + circleQuadrantUVHeight,
         sprite_circle.uvs.min.z};
