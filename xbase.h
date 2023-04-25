@@ -32,9 +32,7 @@ typedef float f32;
    ========================================================================= */
 
 #define global static
-#define function static
-
-#define PIf 3.141592653589793238462643383279502884197f
+#define internal static
 
 #define narray(a) (sizeof(a) / sizeof((a)[0]))
 

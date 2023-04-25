@@ -17,6 +17,17 @@ void xmemcheck(void);
 
 #define XMAX_SAFE_ALLOC 2048
 
+typedef struct
+{
+    wchar_t name[512];
+    bool exists;
+    u32 size;
+    u8 *bytes;
+} XFile;
+
+XFile xfile_read(char *path);
+bool  xfile_write(char *path, u8 *data, u32 size);
+
 /* End of Interface */
 
 
@@ -125,7 +136,11 @@ void safe_free(void *ptr, char *file, int line)
     n = Alloc_list_find(ptr);
     if (n == 0)
     {
+#ifdef _WIN32
         sprintf_s(out, 256, "Called Alloc_free on a non allocted pointer at %s line %d.\n", file, line);
+#else
+        snprintf(out, 256, "Called Alloc_free on a non allocted pointer at %s line %d.\n", file, line);
+#endif
         assert(!"Wrong free");
     }
     else
@@ -143,6 +158,54 @@ void safe_clear(void *ptr, int size)
 void safe_copy(void *dst, void *src, int size)
 {
     memcpy(dst, src, size);
+}
+
+XFile
+xfile_read(char *path) {
+    XFile r = {0};
+    
+    FILE *f = fopen(path, "rb");
+    if (f != 0)
+    {
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        rewind(f);
+        
+        r.bytes = xalloc(sz+1);
+        if (r.bytes)
+        {
+            size_t c = fread(r.bytes, 1, sz, f);
+            if (c == (size_t)sz) {
+                r.exists = true;
+                r.size = sz;
+            }
+        }
+        fclose(f);
+    }
+    
+    return r;
+}
+
+bool
+xfile_write(char *path, u8 *data, u32 size) {
+#if 0
+    bool r = false;
+    HANDLE h;
+    DWORD sz;
+    
+    h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_WRITE, 0, CREATE_ALWAYS, 0, 0);
+    sz = 0;
+    if (!WriteFile(h, data, size, &sz, 0))
+    {
+        CloseHandle(h);
+        return r;
+    }
+    
+    assert(size == sz);
+    r = true;
+    CloseHandle(h);
+    return r;
+#endif
 }
 
 #endif
