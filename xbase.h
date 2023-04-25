@@ -36,4 +36,14 @@ typedef float f32;
 
 #define narray(a) (sizeof(a) / sizeof((a)[0]))
 
+static void FatalError(const char* message) {
+    fprintf(stderr, "%s\n", message);
+    
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "zenity --error --no-wrap --text=\"%s\"", message);
+    system(cmd);
+    
+    exit(0);
+}
+
 #endif

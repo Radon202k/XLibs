@@ -1,3 +1,81 @@
+#ifndef PLATFORM_H
+#define PLATFORM_H
+
+#include <X11/Xlib.h>
+#include <unistd.h>
+
+typedef struct XMouse {
+    f32 x;
+    f32 y;
+} XMouse;
+
+typedef struct XFont {
+    s32 w, h;
+    stbtt_bakedchar cdata[96]; // ASCII 32..126 is 95 glyphs
+    GLuint ftex;
+} XFont;
+
+typedef struct FontVertex {
+    v2 position;
+    v2 texCoord;
+    v4 color;
+} XFontVertex;
+
+typedef struct X11 {
+    bool isRunning;
+    bool enableVSync;
+    struct timespec c1;
+    
+#ifdef XOPENGL_IMPLEMENTATION
+    
+    EGLDisplay *display;
+    EGLSurface* surface;
+#else
+    // TODO: Vulkan?
+#endif
+    
+    Display *dpy;
+    Window window;
+    
+    Atom WM_PROTOCOLS;
+    Atom WM_DELETE_WINDOW;
+    int width;
+    int height;
+    
+} X11;
+
+static void x11_construct    (void);
+static f32  x11_update       (void);
+static void x11_swap_buffers (void);
+
+global X11 x11;
+global XMouse xmouse;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+
+
+
+
+
+
+
+
+
+
+
 bool isLeftButtonDown() {
     Window root, child;
     int rootX, rootY, winX, winY;
@@ -28,13 +106,11 @@ bool isShiftKeyPressed() {
 static void 
 x11_construct(void) {
     x11.dpy = XOpenDisplay(NULL);
-    if (!x11.dpy)
-    {
+    if (!x11.dpy) {
         FatalError("Cannot open X display");
     }
     
-    XSetWindowAttributes attributes =
-    {
+    XSetWindowAttributes attributes = {
         .event_mask = StructureNotifyMask,
     };
     
@@ -172,7 +248,7 @@ x11_construct(void) {
 }
 
 static f32
-x11_begin_frame(void) {
+x11_update(void) {
     // process all incoming X11 events
     if (XPending(x11.dpy))
     {
@@ -217,22 +293,9 @@ x11_begin_frame(void) {
     return dt;
 }
 
-static void
-x11_end_frame(XGLPass passes[32], u32 passIndex) {
-    // render only if window size is non-zero
-    if (x11.width != 0 && x11.height != 0) {
-#ifdef XOPENGL_IMPLEMENTATION
-        xgl_render_frame(passes, passIndex);
-        if (!eglSwapBuffers(x11.display, x11.surface)) 
-            FatalError("Failed to swap OpenGL buffers!");
-#else
-        // TODO: Vulkan?
-#endif
-    }
-    else {
-        // window is minimized, cannot vsync - instead sleep a bit
-        if (x11.enableVSync)
-            usleep(10 * 1000);
-    }
-    
+static void x11_swap_buffers(void) {
+    if (!eglSwapBuffers(x11.display, x11.surface)) 
+        FatalError("Failed to swap OpenGL buffers!");
 }
+
+#endif //PLATFORM_H

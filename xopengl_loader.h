@@ -1,66 +1,13 @@
-#ifndef XOPENGL_H
-#define XOPENGL_H
+#ifndef XOPENGL_LOADER_H
+#define XOPENGL_LOADER_H
 
 #ifdef _WIN32
+// TODO: Windows
 #else
+/* NOTE: Tested on Ubuntu 22.04.2 LTS (22.04, jammy) */
 #include <EGL/egl.h>
 #include <GL/glcorearb.h>
 #endif
-
-typedef enum XGLDrawType {
-    XGLDrawType_null,
-    XGLDrawType_normal,
-    XGLDrawType_indexed,
-    XGLDrawType_instanced,
-} XGLDrawType;
-
-typedef enum XGLPassType {
-    XGLPassType_null,
-    XGLPassType_mesh,
-    XGLPassType_font,
-} XGLPassType;
-
-typedef struct XGLShader {
-    GLuint pipeline;
-    GLuint vshader;
-    GLuint fshader;
-} XGLShader;
-
-typedef struct XGLCommandMesh {
-    Mesh *mesh;
-    Transform transform;
-    GLuint texture;
-} XGLCommandMesh;
-
-typedef struct XGLCommandQuad {
-    v2 pA, pB, pC, pD;
-    v2 uvA,uvB, uvC, uvD;
-    v4 color;
-} XGLCommandQuad;
-
-struct XFont;
-typedef struct XGLPass {
-    XGLPassType type;
-    XGLDrawType drawType;
-    Camera *camera;
-    XGLShader *shader;
-    GLuint vao;
-    /* Font pass */
-    struct XFont *font;
-    GLuint fontPassVbo;
-    GLuint fontPassEbo;
-    XGLCommandMesh meshCommands[4096];
-    u32 meshCommandIndex;
-    XGLCommandQuad quadCommands[4096];
-    u32 quadCommandIndex;
-} XGLPass;
-
-static void   xgl_construct          (void);
-static GLuint xgl_texture_from_png   (char *path);
-static void   xgl_shader_from_files  (XGLShader *shader, char *vsPath, char *fsPath);
-static void   xgl_push_mesh          (XGLPass *pass, v3 p, v3 s, versor r, u32 texture, Mesh *m);
-
-static void   xgl_render_frame       (XGLPass passes[32], u32 passIndex);
 
 // make sure you use functions that are valid for selected GL version (specified when context is created)
 #define GL_FUNCTIONS(X) \
@@ -118,16 +65,6 @@ GL_FUNCTIONS(X)
 #define STR2(x) #x
 #define STR(x) STR2(x)
 
-static void FatalError(const char* message) {
-    fprintf(stderr, "%s\n", message);
-    
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "zenity --error --no-wrap --text=\"%s\"", message);
-    system(cmd);
-    
-    exit(0);
-}
-
 #ifndef NDEBUG
 static void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id, GLenum severity,
                                    GLsizei length, const GLchar* message, const void* user) {
@@ -137,4 +74,4 @@ static void APIENTRY DebugCallback(GLenum source, GLenum type, GLuint id, GLenum
 }
 #endif
 
-#endif //XOPENGL_H
+#endif //XOPENGL_LOADER_H

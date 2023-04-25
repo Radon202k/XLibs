@@ -1,12 +1,6 @@
 #ifndef APP_H
 #define APP_H
 
-typedef struct FontVertex {
-    v2 position;
-    v2 texCoord;
-    v4 color;
-} FontVertex;
-
 typedef struct App {
     Mesh *cubeMesh;
     

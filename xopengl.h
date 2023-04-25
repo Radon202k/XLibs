@@ -1,3 +1,103 @@
+#ifndef XOPENGL_H
+#define XOPENGL_H
+
+typedef enum XGLDrawType {
+    XGLDrawType_null,
+    XGLDrawType_normal,
+    XGLDrawType_indexed,
+    XGLDrawType_instanced,
+} XGLDrawType;
+
+typedef enum XGLPassType {
+    XGLPassType_null,
+    XGLPassType_mesh,
+    XGLPassType_font,
+} XGLPassType;
+
+typedef struct XGLShader {
+    GLuint pipeline;
+    GLuint vshader;
+    GLuint fshader;
+} XGLShader;
+
+typedef struct XGLCommandMesh {
+    Mesh *mesh;
+    Transform transform;
+    GLuint texture;
+} XGLCommandMesh;
+
+typedef struct XGLCommandQuad {
+    v2 pA, pB, pC, pD;
+    v2 uvA,uvB, uvC, uvD;
+    v4 color;
+} XGLCommandQuad;
+
+struct XFont;
+typedef struct XGLPass {
+    XGLPassType type;
+    XGLDrawType drawType;
+    Camera *camera;
+    XGLShader *shader;
+    GLuint vao;
+    /* Font pass */
+    struct XFont *font;
+    GLuint fontPassVbo;
+    GLuint fontPassEbo;
+    XGLCommandMesh meshCommands[4096];
+    u32 meshCommandIndex;
+    XGLCommandQuad quadCommands[4096];
+    u32 quadCommandIndex;
+} XGLPass;
+
+static void   xgl_construct          (void);
+static GLuint xgl_texture_from_png   (char *path);
+static void   xgl_shader_from_files  (XGLShader *shader, char *vsPath, char *fsPath);
+static void   xgl_push_mesh          (XGLPass *pass, v3 p, v3 s, versor r, u32 texture, Mesh *m);
+
+static void   xgl_render_frame       (XGLPass passes[32], u32 passIndex);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static void
 xgl_construct(void) {
     // setup global GL state
@@ -104,7 +204,7 @@ xgl_push_mesh(XGLPass *pass, v3 p, v3 scale, versor rotation, u32 texture,
               Mesh *mesh) {
     XGLCommandMesh c = {
         mesh,
-        transform(p, scale, rotation),
+        x3d_transform(p, scale, rotation),
         texture,
     };
     
@@ -149,7 +249,8 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
             // matrices
             mat4 viewRH;
             mat4 perspectiveRH;
-            renderer_update_matrices_rh(viewRH, perspectiveRH, pass->camera);
+            renderer_update_matrices_rh(pass->camera, (f32)x11.width/x11.height, 
+                                        viewRH, perspectiveRH);
             glProgramUniformMatrix4fv(pass->shader->vshader, 0, 1, GL_FALSE, (f32 *)perspectiveRH);
             glProgramUniformMatrix4fv(pass->shader->vshader, 1, 1, GL_FALSE, (f32 *)viewRH);
             if (pass->drawType == XGLDrawType_indexed) {
@@ -161,7 +262,7 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
                     glBindTextureUnit(0, command->texture);
                     // Model matrix
                     mat4 model;
-                    mat4_from_transform(command->transform, model);
+                    x3d_object_transform(command->transform, model);
                     glProgramUniformMatrix4fv(pass->shader->vshader, 2, 1, GL_FALSE, (f32 *)model);
                     // vbo
                     glBindVertexBuffer(0, mesh->vbo, 0, sizeof(MeshVertex));
@@ -191,7 +292,7 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
             
             if (pass->drawType == XGLDrawType_indexed) {
                 
-                FontVertex vertices[4096] = {0};
+                XFontVertex vertices[4096] = {0};
                 u32 vertexIndex = 0;
                 
                 GLuint indices[4096] = {0};
@@ -236,7 +337,7 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pass->fontPassEbo);
                 
                 // Update the VBO data
-                glBufferSubData(GL_ARRAY_BUFFER, 0, vertexIndex*sizeof(FontVertex), vertices);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, vertexIndex*sizeof(XFontVertex), vertices);
                 // Update the EBO data
                 glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, indexIndex*sizeof(GLuint), indices);
                 
@@ -253,3 +354,73 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
         }
     }
 }
+
+static XFont *
+xgl_font(char *path, f32 height) {
+    XFont *result = xalloc(sizeof *result);
+    u32 w = 2048;
+    u32 h = 2048;
+    result->w = w;
+    result->h = h;
+    /* Temp buffers */
+    u8 *tempBitmap = xalloc(w*h);
+    /* Open file */
+    XFile font = xfile_read(path);
+    if (!font.exists)
+        assert(!"Could not open font");
+    /* Bake glyph bitmaps */
+    stbtt_BakeFontBitmap(font.bytes,0, height, tempBitmap,w,h, 32,96, result->cdata); // no guarantee this fits!
+    /* Alloc full RGBA bytes to make things easier */ 
+    u8 *bytes = xalloc(w*h*4);
+    /* Convert Alpha-only bytes to RGBA bytes */
+    u8 *destRow = bytes;
+    u8 *srcRow = tempBitmap;
+    for (u32 y=0; y<h; ++y) {
+        u32 *destPixel = (u32 *)destRow;
+        u8 *srcPixel = srcRow;
+        for (u32 x=0; x<w; ++x) {
+            u8 alpha = *srcPixel;
+            *destPixel++ = (alpha << 24 | alpha << 16 | alpha << 8 | alpha);
+            srcPixel++;
+        }
+        destRow += 4*w;
+        srcRow += 1*w;
+    }
+    /* Create texture from full RGBA bytes */
+    glCreateTextures(GL_TEXTURE_2D, 1, &result->ftex);
+    glTextureParameteri(result->ftex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(result->ftex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(result->ftex, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTextureParameteri(result->ftex, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTextureStorage2D (result->ftex, 1, GL_RGBA8, w, h);
+    glTextureSubImage2D(result->ftex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, bytes);
+    /* Free temp bytes */
+    xfree(bytes);
+    xfree(tempBitmap);
+    
+    return result;
+}
+
+static void 
+draw_text(XGLPass *pass, v2 p, f32 scale, v4 color, char *text) {
+    f32 x = p[0];
+    f32 y = p[1];
+    while (*text) {
+        stbtt_aligned_quad q;
+        stbtt_GetBakedQuad(pass->font->cdata, pass->font->w,pass->font->h, *text-32, &x,&y,&q,1);//1=opengl & d3d10+,0=d3d9
+        
+        xgl_push_quad(pass,
+                      (v2){scale*q.x0,scale*q.y0}, 
+                      (v2){scale*q.x1,scale*q.y0}, 
+                      (v2){scale*q.x1,scale*q.y1}, 
+                      (v2){scale*q.x0,scale*q.y1},
+                      (v2){q.s0,q.t0}, (v2){q.s1,q.t0}, (v2){q.s1,q.t1}, (v2){q.s0,q.t1},
+                      color);
+        ++text;
+    }
+}
+
+
+
+
+#endif //XOPENGL_H

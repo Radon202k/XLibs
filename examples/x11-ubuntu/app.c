@@ -1,73 +1,7 @@
-
-static XFont *
-x11_font(char *path, f32 height) {
-    XFont *result = xalloc(sizeof *result);
-    u32 w = 2048;
-    u32 h = 2048;
-    result->w = w;
-    result->h = h;
-    /* Temp buffers */
-    u8 *tempBitmap = xalloc(w*h);
-    /* Open file */
-    XFile font = xfile_read(path);
-    if (!font.exists)
-        assert(!"Could not open font");
-    /* Bake glyph bitmaps */
-    stbtt_BakeFontBitmap(font.bytes,0, height, tempBitmap,w,h, 32,96, result->cdata); // no guarantee this fits!
-    /* Alloc full RGBA bytes to make things easier */ 
-    u8 *bytes = xalloc(w*h*4);
-    /* Convert Alpha-only bytes to RGBA bytes */
-    u8 *destRow = bytes;
-    u8 *srcRow = tempBitmap;
-    for (u32 y=0; y<h; ++y) {
-        u32 *destPixel = (u32 *)destRow;
-        u8 *srcPixel = srcRow;
-        for (u32 x=0; x<w; ++x) {
-            u8 alpha = *srcPixel;
-            *destPixel++ = (alpha << 24 | alpha << 16 | alpha << 8 | alpha);
-            srcPixel++;
-        }
-        destRow += 4*w;
-        srcRow += 1*w;
-    }
-    /* Create texture from full RGBA bytes */
-    glCreateTextures(GL_TEXTURE_2D, 1, &result->ftex);
-    glTextureParameteri(result->ftex, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTextureParameteri(result->ftex, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTextureParameteri(result->ftex, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTextureParameteri(result->ftex, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTextureStorage2D (result->ftex, 1, GL_RGBA8, w, h);
-    glTextureSubImage2D(result->ftex, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, bytes);
-    /* Free temp bytes */
-    xfree(bytes);
-    xfree(tempBitmap);
-    
-    return result;
-}
-
-static void 
-draw_text(XGLPass *pass, v2 p, f32 scale, v4 color, char *text) {
-    f32 x = p[0];
-    f32 y = p[1];
-    while (*text) {
-        stbtt_aligned_quad q;
-        stbtt_GetBakedQuad(pass->font->cdata, pass->font->w,pass->font->h, *text-32, &x,&y,&q,1);//1=opengl & d3d10+,0=d3d9
-        
-        xgl_push_quad(pass,
-                      (v2){scale*q.x0,scale*q.y0}, 
-                      (v2){scale*q.x1,scale*q.y0}, 
-                      (v2){scale*q.x1,scale*q.y1}, 
-                      (v2){scale*q.x0,scale*q.y1},
-                      (v2){q.s0,q.t0}, (v2){q.s1,q.t0}, (v2){q.s1,q.t1}, (v2){q.s0,q.t1},
-                      color);
-        ++text;
-    }
-}
-
 void app_construct(void) {
     /* Make the orbit camera */
-    app.orbitCamera = camera_orbit((v3){0,0,0}, 10, 0, 0);
-    app.fontCamera = camera_orbit((v3){0,0,0}, 10, 0, 0);
+    app.orbitCamera = x3d_camera_orbit((v3){0,0,0}, 10, 0, 0);
+    app.fontCamera = x3d_camera_orbit((v3){0,0,0}, 10, 0, 0);
     
     app.passIndex = 2;
     
@@ -113,7 +47,7 @@ void app_construct(void) {
         glCreateVertexArrays(1, &pass->vao);
         
         GLuint vbo, ebo;
-        u32 vertexDataSize = 4096*sizeof(FontVertex);
+        u32 vertexDataSize = 4096*sizeof(XFontVertex);
         glCreateBuffers(1, &vbo);
         glNamedBufferStorage(vbo, vertexDataSize, 0, GL_DYNAMIC_STORAGE_BIT);
         glCreateBuffers(1, &ebo);
@@ -122,7 +56,7 @@ void app_construct(void) {
         pass->fontPassEbo = ebo;
         
         GLint vbufIndex = 0;
-        glVertexArrayVertexBuffer(pass->vao, vbufIndex, vbo, 0, sizeof(FontVertex));
+        glVertexArrayVertexBuffer(pass->vao, vbufIndex, vbo, 0, sizeof(XFontVertex));
         
         pass->type = XGLPassType_font;
         pass->drawType = XGLDrawType_indexed;
@@ -130,20 +64,20 @@ void app_construct(void) {
         pass->shader = &app.shaderFont;
         {
             /* Set up position input attrib format */
-            glVertexArrayAttribFormat (pass->vao, 0, 2, GL_FLOAT, GL_FALSE, offsetof(FontVertex, position));
+            glVertexArrayAttribFormat (pass->vao, 0, 2, GL_FLOAT, GL_FALSE, offsetof(XFontVertex, position));
             glVertexArrayAttribBinding(pass->vao, 0, 0);
             glEnableVertexArrayAttrib (pass->vao, 0);
             /* Set up texCoord input attrib format */
-            glVertexArrayAttribFormat (pass->vao, 1, 2, GL_FLOAT, GL_FALSE, offsetof(FontVertex, texCoord));
+            glVertexArrayAttribFormat (pass->vao, 1, 2, GL_FLOAT, GL_FALSE, offsetof(XFontVertex, texCoord));
             glVertexArrayAttribBinding(pass->vao, 1, 0);
             glEnableVertexArrayAttrib (pass->vao, 1);
             /* Set up color input attrib format */
-            glVertexArrayAttribFormat (pass->vao, 2, 4, GL_FLOAT, GL_FALSE, offsetof(FontVertex, color));
+            glVertexArrayAttribFormat (pass->vao, 2, 4, GL_FLOAT, GL_FALSE, offsetof(XFontVertex, color));
             glVertexArrayAttribBinding(pass->vao, 2, 0);
             glEnableVertexArrayAttrib (pass->vao, 2);
         }
         
-        app.fonts[0] = x11_font("fonts/test.ttf", 128);
+        app.fonts[0] = xgl_font("fonts/test.ttf", 128);
         pass->font = app.fonts[0];
     }
     
