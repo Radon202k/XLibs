@@ -156,7 +156,7 @@ client_update(f32 dt) {
         if (!client.isWaitingResponse) {
             printf("Trying to connect\n");
             client.isWaitingResponse = true;
-            client_connect("127.0.0.1", "8080");
+            client_connect("34.133.4.168", "7080");
         }
         else {
             client.waitCounter += dt;
