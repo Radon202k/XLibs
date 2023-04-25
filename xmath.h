@@ -1,9 +1,9 @@
 #ifndef XLIB_MATH
 #define XLIB_MATH
 
-#define PIf 3.14159265358979323846264338327950288   /* pi          */
-#define PI2f 1.57079632679489661923132169163975144   /* pi/2        */
-#define PI4f 0.785398163397448309615660845819875721  /* pi/4        */
+#define PIf 3.14159265358979323846264338327950288f    /* pi          */
+#define PI2f 1.57079632679489661923132169163975144f   /* pi/2        */
+#define PI4f 0.785398163397448309615660845819875721f  /* pi/4        */
 
 /* =========================================================================
    DATA TYPES
@@ -97,6 +97,7 @@ void v2i_normalize (v2i a);
 f32  v2i_dot       (v2i a, v2i b);
 f32  v2i_length2   (v2i a);
 f32  v2i_length    (v2i a);
+void v2i_copy      (v2i source, v2i dest);
 
 /* =========================================================================
    VECTOR 3 FLOAT
@@ -460,6 +461,12 @@ inline void
 v2i_rand(v2i a, v2i b, v2i dest) {
     dest[0] = s32_rand(a[0], b[0]);
     dest[1] = s32_rand(a[1], b[1]);
+}
+
+void
+v2i_copy(v2i source, v2i dest) {
+    dest[0] = source[0];
+    dest[1] = source[1];
 }
 
 /* =========================================================================
@@ -1082,7 +1089,7 @@ circle_vs_circle_dist(Circle A, Circle B)
     v2 aMinusB;
     v2_sub(A.center, B.center, aMinusB);
     f32 dist = v2_length(aMinusB);
-    return fmax(A.radius + B.radius - dist, 0);
+    return (f32)fmax(A.radius + B.radius - dist, 0);
 }
 
 void

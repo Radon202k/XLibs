@@ -14,7 +14,7 @@ void xstrcpy  (T *dest, T *src);
 void xstrncpy (T *dest, T *src, u32 size);
 bool xstrcmp  (T *stra, T *strb);
 s32  xstrlen  (T *str);
-void xstrcat  (T *dest, u32 destsize, T *b);
+void xstrcat  (T *dest, T *b);
 T   *xstrint  (s32 v, u32 zeroCount);
 T   *xstrdbl  (double value);
 
@@ -75,7 +75,7 @@ s32 xstrlen(T *s) {
     return (u32)strlen(s);
 }
 
-void xstrcat(T *dest, u32 destSize, T *b)
+void xstrcat(T *dest, T *b)
 {
     strcat(dest, b);
 }

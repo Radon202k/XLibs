@@ -1,13 +1,10 @@
-#ifndef XLIB_WINDOWS
-#define XLIB_WINDOWS
+#ifndef XLIB_WINDOWS_H
+#define XLIB_WINDOWS_H
 
 #define COBJMACROS
-#define WIN32_LEAN_AND_MEAN
 
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <windowsx.h>
-#include <mmeapi.h>
-#include <dsound.h>
 #include <d3d11.h>
 #include <d3dcompiler.h>
 #include <dxgi1_2.h>
@@ -15,7 +12,6 @@
 
 #pragma comment(lib, "gdi32.lib")
 #pragma comment(lib, "user32.lib")
-#pragma comment(lib, "dsound.lib")
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #pragma comment(lib, "dxguid.lib")
@@ -45,26 +41,17 @@ typedef union
     };
 } XKeys;
 
-typedef struct
-{
+typedef struct {
     bool  dragging;
     f32   wheel;
-    v2f   pos, dragLastP;
+    v2   p, dragLastP;
     void* draggingAddress;
     XKey   left, right;
 } XMouse;
 
 typedef struct
 {
-    wchar_t name[512];
-    bool exists;
-    u32 size;
-    u8 *bytes;
-} XFile;
-
-typedef struct
-{
-    wchar_t name[512];
+    char name[512];
     u32 fileCount;
     XFile *files;
 } XDirectory;
@@ -72,41 +59,41 @@ typedef struct
 typedef struct
 {
     bool inputCharEntered;
-    wchar_t inputChar;
+    char inputChar;
     
     HCURSOR lastCursorSet;
     HCURSOR cursorSet;
     
     XKeys key;
-    XMouse mouse;
     HWND wh;
     u64 pf;
     
 } XWindows;
 
 global XWindows xwin;
+global XMouse xmouse;
 
 /* ============================================================================
 INTERFACE
  ========================================================================== */
 
 void xwin_initialize (XWindowConfig config);
-void xwin_update (bool topdown, v2f windim);
+void xwin_update (bool topdown, v2 windim);
 
 inline LARGE_INTEGER xwin_time(void);
 inline f32 xwin_seconds(LARGE_INTEGER start, LARGE_INTEGER end);
 
-bool xwin_dragged(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta);
+bool xwin_dragged(v2 p, f32 maxdist, void *address, bool *hover, v2 delta);
 
-WNDCLASSEXW xwin_wndclass(WNDPROC userwndproc);
+static WNDCLASSEXA xwin_wndclass(WNDPROC userwndproc);
 
-void  xwin_clipboard_copy(wchar_t *text);
-s32   xwin_clipboard_paste(wchar_t *text, int maxLength);
-void  xwin_path(wchar_t *path, u32 size);
+void  xwin_clipboard_copy(char *text);
+s32   xwin_clipboard_paste(char *text, int maxLength);
+void  xwin_path(char *path, u32 size);
 void  xwin_pathascii(char *path, u32 size);
-XFile xwin_file_read(wchar_t *path);
-bool  xwin_file_write(wchar_t *path, u8 *data, u32 size);
-void  xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename);
+XFile xwin_file_read(char *path);
+bool  xwin_file_write(char *path, u8 *data, u32 size);
+void  xwin_path_abs(char *dst, u32 dstsize, char *filename);
 void  xwin_path_abs_ascii(char *dst, u32 dstsize, char *filename);
 
 
@@ -132,44 +119,39 @@ void xwin_initialize(XWindowConfig config)
     xwin.pf = pf.QuadPart;
 }
 
-void xwin_update(bool topdown, v2f windim)
+void xwin_update(bool topdown, v2 windim)
 {
     // Get mouse position
     POINT mousePoint;
-    if (GetCursorPos(&mousePoint))
-    {
-        if (ScreenToClient(xwin.wh, &mousePoint))
-        {
-            xwin.mouse.pos.x = (f32)mousePoint.x;
-            xwin.mouse.pos.y = (topdown ? mousePoint.y : windim.y - (f32)mousePoint.y);
+    if (GetCursorPos(&mousePoint)) {
+        if (ScreenToClient(xwin.wh, &mousePoint)) {
+            xmouse.p[0] = (f32)mousePoint.x;
+            xmouse.p[1] = (topdown ? mousePoint.y : windim[1] - (f32)mousePoint.y);
         }
     }
     
     // Mouse dragging
-    if (xwin.mouse.left.down && !xwin.mouse.dragging)
-    {
-        xwin.mouse.dragging = true;
+    if (xmouse.left.down && !xmouse.dragging) {
+        xmouse.dragging = true;
     }
     
-    if (xwin.mouse.dragging && !xwin.mouse.left.down)
-    {
-        xwin.mouse.dragging = false;
+    if (xmouse.dragging && !xmouse.left.down) {
+        xmouse.dragging = false;
     }
     
     // Clear keyboard pressed state from last frame
-    for (u32 i = 0; i < narray(xwin.key.all); ++i)
-    {
+    for (u32 i = 0; i < narray(xwin.key.all); ++i) {
         xwin.key.all[i].pressed = false;
     }
     
     // Clear mouse pressed state
-    xwin.mouse.left.pressed = false;
-    xwin.mouse.right.pressed = false;
+    xmouse.left.pressed = false;
+    xmouse.right.pressed = false;
     
-    xwin.mouse.left.released = false;
-    xwin.mouse.right.released = false;
+    xmouse.left.released = false;
+    xmouse.right.released = false;
     
-    xwin.mouse.wheel = 0;
+    xmouse.wheel = 0;
     
     // Clear the input char
     xwin.inputChar = 0;
@@ -187,11 +169,11 @@ case WM_CLOSE: {                            \
 xd11.running = false;                   \
 } break;                                    \
 case WM_CHAR: {                             \
-xwin.inputChar = (wchar_t)wParam;       \
+xwin.inputChar = (char)wParam;       \
 xwin.inputCharEntered = true;           \
 } break;                                    \
 case WM_MOUSEWHEEL: {                                                               \
-xwin.mouse.wheel = ((f32)GET_WHEEL_DELTA_WPARAM(wParam) / (f32)WHEEL_DELTA);     \
+xmouse.wheel = ((f32)GET_WHEEL_DELTA_WPARAM(wParam) / (f32)WHEEL_DELTA);     \
 } break;                                                                            \
 case WM_KEYDOWN:                                                    \
 case WM_SYSKEYDOWN:                                                 \
@@ -242,20 +224,20 @@ key->released = (message == WM_KEYUP);                      \
 }                                                               \
 } break;                                                            \
 case WM_LBUTTONDOWN: {                  \
-xwin.mouse.left.down = true;         \
-xwin.mouse.left.pressed = true;      \
+xmouse.left.down = true;         \
+xmouse.left.pressed = true;      \
 } break;                                \
 case WM_RBUTTONDOWN: {                  \
-xwin.mouse.right.down = true;        \
-xwin.mouse.right.pressed = true;     \
+xmouse.right.down = true;        \
+xmouse.right.pressed = true;     \
 } break;                                \
 case WM_LBUTTONUP: {                    \
-xwin.mouse.left.down = false;        \
-xwin.mouse.left.released = true;     \
+xmouse.left.down = false;        \
+xmouse.left.released = true;     \
 } break;                                \
 case WM_RBUTTONUP: {                    \
-xwin.mouse.right.down = false;       \
-xwin.mouse.right.released = true;    \
+xmouse.right.down = false;       \
+xmouse.right.released = true;    \
 } break                                 \
 
 
@@ -272,18 +254,19 @@ inline f32 xwin_seconds(LARGE_INTEGER start, LARGE_INTEGER end)
     return r;
 }
 
-bool xwin_dragged(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
+bool xwin_dragged(v2 p, f32 maxdist, void *address, bool *hover, v2 delta)
 {
     bool dragged = false;
-    
-    if (len2f(sub2f(p, xwin.mouse.pos)) < maxdist * maxdist)
+    v2 pMinusMouseP;
+    v2_sub(p, xmouse.p, pMinusMouseP);
+    if (v2_length2(pMinusMouseP) < maxdist * maxdist)
     {
         *hover = true;
         
-        if (xwin.mouse.dragging)
+        if (xmouse.dragging)
         {
-            xwin.mouse.dragLastP = xwin.mouse.pos;
-            xwin.mouse.draggingAddress = address;
+            v2_copy(xmouse.p, xmouse.dragLastP);
+            xmouse.draggingAddress = address;
         }
     }
     else
@@ -291,35 +274,36 @@ bool xwin_dragged(v2f p, f32 maxdist, void* address, bool* hover, v2f* delta)
         *hover = false;
     }
     
-    if (xwin.mouse.dragging && xwin.mouse.draggingAddress == address)
+    if (xmouse.dragging && xmouse.draggingAddress == address)
     {
-        v2f deltaP = sub2f(xwin.mouse.pos, xwin.mouse.dragLastP);
-        xwin.mouse.dragLastP = xwin.mouse.pos;
-        *delta = deltaP;
+        v2 deltaP;
+        v2_sub(xmouse.p, xmouse.dragLastP, deltaP);
+        v2_copy(xmouse.p, xmouse.dragLastP);
+        v2_copy(deltaP, delta);
         dragged = true;
     }
     
     return dragged;
 }
 
-WNDCLASSEXW xwin_wndclass(WNDPROC userwndproc)
+static WNDCLASSEXA
+xwin_wndclass(WNDPROC userwndproc)
 {
-    WNDCLASSEXW r = {
+    WNDCLASSEXA r = {
         sizeof(r), CS_HREDRAW | CS_VREDRAW, userwndproc, 0, 0,
-        GetModuleHandle(0), NULL, NULL, NULL, NULL, L"xwindow_class", NULL,
+        GetModuleHandle(0), NULL, NULL, NULL, NULL, "xwindow_class", NULL,
     };
     return r;
 }
 
-void xwin_clipboard_copy(wchar_t *text)
-{
-    HGLOBAL globalMemory = GlobalAlloc(GMEM_MOVEABLE, (xstrlen(text)+1) * sizeof(wchar_t));
+void xwin_clipboard_copy(char *text) {
+    HGLOBAL globalMemory = GlobalAlloc(GMEM_MOVEABLE, (xstrlen(text)+1) * sizeof(char));
     
-    wchar_t *data = (wchar_t *)GlobalLock(globalMemory);
+    char *data = (char *)GlobalLock(globalMemory);
     
     u32 copiedLength = xstrlen(text)+1;
     
-    xstrcpy(data, copiedLength, text);
+    xstrcpy(data, text);
     
     assert(copiedLength < 1000);
     
@@ -335,7 +319,7 @@ void xwin_clipboard_copy(wchar_t *text)
     GlobalFree(globalMemory);
 }
 
-s32 xwin_clipboard_paste(wchar_t *text, int maxLength)
+s32 xwin_clipboard_paste(char *text, int maxLength)
 {
     s32 pastedLength = 0;
     
@@ -344,12 +328,12 @@ s32 xwin_clipboard_paste(wchar_t *text, int maxLength)
         HGLOBAL globalMemory = GetClipboardData(CF_UNICODETEXT);
         if (globalMemory != NULL)
         {
-            wchar_t *data = (wchar_t *)GlobalLock(globalMemory);
+            char *data = (char *)GlobalLock(globalMemory);
             pastedLength = xstrlen(data);
             
             assert(pastedLength < 1000);
             
-            xstrcps(text, maxLength*sizeof(wchar_t), data, pastedLength);
+            xstrncpy(text, data, pastedLength);
             GlobalUnlock(globalMemory);
         }
         
@@ -359,22 +343,16 @@ s32 xwin_clipboard_paste(wchar_t *text, int maxLength)
     return pastedLength;
 }
 
-void xwin_path(wchar_t *path, u32 size)
-{
-    GetModuleFileNameW(NULL, path, size);
-}
-
-void xwin_path_ascii(char *path, u32 size)
+void xwin_path(char *path, u32 size)
 {
     GetModuleFileNameA(NULL, path, size);
 }
 
-XFile xwin_file_read(wchar_t *path)
+XFile xwin_file_read(char *path)
 {
     XFile r = {0};
     
-    FILE *f = 0;
-    _wfopen_s(&f, path, L"rb, ccs=UTF-16LE");
+    FILE *f = fopen(path, "rb, ccs=UTF-8");
     if (f != 0)
     {
         fseek(f, 0, SEEK_END);
@@ -384,9 +362,9 @@ XFile xwin_file_read(wchar_t *path)
         r.bytes = xalloc(sz+1);
         if (r.bytes)
         {
-            size_t c = fread((wchar_t *)r.bytes, sizeof(wchar_t),
-                             sz/sizeof(wchar_t), f);
-            if (c == sz/sizeof(wchar_t))
+            size_t c = fread((char *)r.bytes, sizeof(char),
+                             sz/sizeof(char), f);
+            if (c == sz/sizeof(char))
             {
                 r.exists = true;
                 r.size = sz;
@@ -398,13 +376,13 @@ XFile xwin_file_read(wchar_t *path)
     return r;
 }
 
-bool xwin_file_write(wchar_t *path, u8 *data, u32 size)
+bool xwin_file_write(char *path, u8 *data, u32 size)
 {
     bool r = false;
     HANDLE h;
     DWORD sz;
     
-    h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_WRITE, 0, CREATE_ALWAYS, 0, 0);
+    h = CreateFileA(path, GENERIC_WRITE, FILE_SHARE_WRITE, 0, CREATE_ALWAYS, 0, 0);
     sz = 0;
     if (!WriteFile(h, data, size, &sz, 0))
     {
@@ -418,15 +396,15 @@ bool xwin_file_write(wchar_t *path, u8 *data, u32 size)
     return r;
 }
 
-void xwin_directory_open(XDirectory *dir, wchar_t *directoryPath) {
-    WIN32_FIND_DATAW findData;
+void xwin_directory_open(XDirectory *dir, char *directoryPath) {
+    WIN32_FIND_DATA findData;
     HANDLE findHandle;
     
-    wchar_t searchPath[MAX_PATH];
-    xstrcpy(searchPath, MAX_PATH, directoryPath);
-    xstrcat(searchPath, MAX_PATH, L"\\*");
+    char searchPath[MAX_PATH];
+    xstrcpy(searchPath, directoryPath);
+    xstrcat(searchPath, "\\*");
     
-    findHandle = FindFirstFileW(searchPath, &findData);
+    findHandle = FindFirstFileA(searchPath, &findData);
     if (findHandle == INVALID_HANDLE_VALUE) {
         printf("Error: %lu\n", GetLastError());
         return;
@@ -437,7 +415,7 @@ void xwin_directory_open(XDirectory *dir, wchar_t *directoryPath) {
         if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
             fileCount++;
         }
-    } while (FindNextFileW(findHandle, &findData));
+    } while (FindNextFileA(findHandle, &findData));
     
     FindClose(findHandle);
     
@@ -446,7 +424,7 @@ void xwin_directory_open(XDirectory *dir, wchar_t *directoryPath) {
     dir->fileCount = fileCount;
     
     // Reset findHandle
-    findHandle = FindFirstFileW(searchPath, &findData);
+    findHandle = FindFirstFileA(searchPath, &findData);
     if (findHandle == INVALID_HANDLE_VALUE) {
         printf("Error: %lu\n", GetLastError());
         return;
@@ -455,13 +433,13 @@ void xwin_directory_open(XDirectory *dir, wchar_t *directoryPath) {
     u32 fileIndex = 0;
     do {
         if (!(findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) {
-            xstrcpy(dir->files[fileIndex].name, 512, findData.cFileName);
+            // xstrcpy(dir->files[fileIndex].name, findData.cFileName);
             dir->files[fileIndex].exists = true;
             dir->files[fileIndex].size = findData.nFileSizeLow;
             dir->files[fileIndex].bytes = NULL; // You can load the file bytes later using xwin_file_read()
             fileIndex++;
         }
-    } while (FindNextFileW(findHandle, &findData));
+    } while (FindNextFileA(findHandle, &findData));
     
     FindClose(findHandle);
 }
@@ -477,9 +455,9 @@ void xwin_directory_close(XDirectory *dir) {
 /*  Copies the exe path until last slash
     c:/my/path/to/the/app/main.exe
                          ^                            */
-void xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename)
+void xwin_path_abs(char *dst, u32 dstsize, char *filename)
 {
-    wchar_t *slashpos, *at, exepath[MAX_PATH], dir[260];
+    char *slashpos, *at, exepath[MAX_PATH]={0}, dir[260]={0};
     
     xwin_path(exepath, MAX_PATH);
     
@@ -489,23 +467,8 @@ void xwin_path_abs(wchar_t *dst, u32 dstsize, wchar_t *filename)
         if (*at == '\\' || *at == '/')
         slashpos = at;
     
-    xstrcps(dir, 260, exepath, (u32)(slashpos - exepath));
-    _snwprintf_s(dst, dstsize, _TRUNCATE, L"%s\\%s", dir, filename);
-}
-
-void xwin_path_abs_ascii(char *dst, u32 dstsize, char *filename)
-{
-    char *slashpos, *at, exepath[MAX_PATH], dir[260];
-    xwin_path_ascii(exepath, MAX_PATH);
-    
-    slashpos  = 0;
-    at = exepath;
-    while (*at++)
-        if (*at == '\\' || *at == '/')
-        slashpos = at;
-    
-    xstrcpsascii(dir, 260, exepath, (u32)(slashpos - exepath));
-    _snprintf_s(dst, dstsize, _TRUNCATE, "%s\\%s", dir, filename);
+    xstrncpy(dir, exepath, (u32)(slashpos - exepath));
+    snprintf(dst, _TRUNCATE, "%s\\%s", dir, filename);
 }
 
 #endif

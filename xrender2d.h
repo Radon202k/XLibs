@@ -9,60 +9,60 @@
 
 // Load Font from disk
 {
-    wchar_t full_path[512];
-    xwin_path_abs(full_path, 512, L"fonts\\Inconsolata.ttf");
+    char full_path[512];
+    xwin_path_abs(full_path, 512, "fonts\\Inconsolata.ttf");
     font = xrender2d_font(&xrender2d.texture_atlas,
-                         full_path, L"Inconsolata", 64);
+                         full_path, "Inconsolata", 64);
 }
 
 // Load PNG from disk and make Sprite in Texture Atlas
 {
-    wchar_t full_path[512];
-    xwin_path_abs(full_path, 512, L"images\\naruto.png");
+    char full_path[512];
+    xwin_path_abs(full_path, 512, "images\\naruto.png");
     sprite_naruto = xrender2d_sprite_from_png(&xrender2d.texture_atlas,
                                              full_path, false);
 }
 
 // Draw Line
-draw_line(&layer1, (v2f){0,0}, xwin.mouse.pos, (v4f){1,1,1,1});
+draw_line(&layer1, (v2){0,0}, xwin.mouse.pos, (v4){1,1,1,1});
 
 // Draw Rect
 {
-    v2f s = {200,20};
-    v2f p = add2f(xwin.mouse.pos, mul2f(-.5f,s));
-    draw_rect(&layer1, p, s, (v4f){1,0,0,1});
+    v2 s = {200,20};
+    v2 p = add2f(xwin.mouse.pos, mul2f(-.5f,s));
+    draw_rect(&layer1, p, s, (v4){1,0,0,1});
 }
 
 // Draw Sprite
 {
-    v2f s = sprite_naruto.size;
-    v2f p = add2f(xwin.mouse.pos, mul2f(-.5f,s));
-    draw_sprite(&layer1, p, s, (v4f){1,1,1,1}, sprite_naruto);
+    v2 s = sprite_naruto.size;
+    v2 p = add2f(xwin.mouse.pos, mul2f(-.5f,s));
+    draw_sprite(&layer1, p, s, (v4){1,1,1,1}, sprite_naruto);
 }
 
 // Draw Text
 {
-    v2f p = {0,0};
-    draw_text(&layer1, p, (v4f){1,0,0,1}, &font, L"Test");
+    v2 p = {0,0};
+    draw_text(&layer1, p, (v4){1,0,0,1}, &font, "Test");
 }
 
 // Example draw board
-void draw_board(v2f board_size, f32 line_thickness)
+void draw_board(v2 board_size, f32 line_thickness)
 {
-    v2f board_pos = sub2f(mul2f(.5f, xd11.bbDim), mul2f(.5f,board_size));
+    v2 board_pos = sub2f(mul2f(.5f, xd11.bbDim), mul2f(.5f,board_size));
     v2i line_count = {9,9};
-    v2f line_size = {line_thickness,board_size.y+line_thickness};
-    v2f line_space = (v2f){board_size.x/(line_count.x-1), board_size.y/(line_count.y-1)};
-    for (s32 x=0; x<line_count.x; ++x)
+    v2 line_size = {line_thickness,board_size[1]+line_thickness};
+    v2 line_space = (v2){board_size[0]/(line_count[0]-1), board_size[1]/(line_count[1]-1)};
+    for (s32 x=0; x<line_count[0]; ++x)
         draw_rect(&layer1, 
-                  add2f(board_pos, (v2f){x*line_space.x, 0}),
-                  line_size, (v4f){0,0,0,1});
+                  add2f(board_pos, (v2){x*line_space[0], 0}),
+                  line_size, (v4){0,0,0,1});
     
-    line_size = (v2f){board_size.x+line_thickness,line_thickness};
-    for (s32 y=0; y<line_count.y; ++y)
+    line_size = (v2){board_size[0]+line_thickness,line_thickness};
+    for (s32 y=0; y<line_count[1]; ++y)
         draw_rect(&layer1, 
-                  add2f(board_pos, (v2f){0, y*line_space.y}),
-                  line_size, (v4f){0,0,0,1});
+                  add2f(board_pos, (v2){0, y*line_space[1]}),
+                  line_size, (v4){0,0,0,1});
 }
 
 */
@@ -82,8 +82,8 @@ void draw_board(v2f board_size, f32 line_thickness)
 typedef struct
 {
     v2i dim;
-    rect3f uvs;
-    v2f align;
+    Rect3 uvs;
+    v2 align;
 } XSprite;
 
 typedef struct
@@ -94,7 +94,7 @@ typedef struct
 
 typedef struct
 {
-    wchar_t path[MAX_PATH];
+    char path[MAX_PATH];
     HBITMAP bitmap;
     VOID *bytes;
     //
@@ -118,38 +118,38 @@ typedef struct
     
     u8 *atlasBytes;
     XTextureAtlas atlas;
-    rect3f atlasUvs;
+    Rect3 atlasUvs;
 } XFont;
 
 typedef struct
 {
-    v2f a;
-    v2f b;
-    v4f color;
+    v2 a;
+    v2 b;
+    v4 color;
 } XRenderCommandLine;
 
 typedef struct
 {
-    v2f position;
-    v2f size;
-    v4f color;
+    v2 position;
+    v2 size;
+    v4 color;
 } XRenderCommandRect;
 
 typedef struct
 {
-    v2f position;
-    v2f size;
-    v4f color;
+    v2 position;
+    v2 size;
+    v4 color;
     XSprite sprite;
 } XRenderCommandSprite;
 
 typedef struct
 {
-    v2f position;
-    v4f color;
+    v2 position;
+    v4 color;
     XFont *font;
     u32 length;
-    wchar_t *text;
+    char *text;
 } XRenderCommandText;
 
 typedef enum XRenderCommandType
@@ -178,7 +178,7 @@ typedef struct
     XRenderCommand commands[4096];
     u32 command_index;
     
-    rect2f *scissor;
+    Rect2 *scissor;
 } XRenderBatch;
 
 typedef struct
@@ -192,7 +192,7 @@ typedef struct
     /* Core variables */
     XRenderTarget target_default;
     
-    v4f clear_color;
+    v4 clear_color;
     
     u32 target_view_count;
     ID3D11RenderTargetView **target_views;
@@ -226,23 +226,23 @@ global XSprite sprite_circle_tr;
 global XSprite sprite_circle_bl;
 global XSprite sprite_circle_br;
 
-void xrender2d_initialize (v4f clear_color);
+void xrender2d_initialize (v4 clear_color);
 void xrender2d_shutdown   (void);
 void xrender2d_pre_update (void);
 void xrender2d_post_update(XRenderBatch *array, u32 count);
 
-void draw_line   (XRenderBatch *batch, v2f a,   v2f b,    v4f color);
-void draw_arrow  (XRenderBatch *batch, v2f a,   v2f b,    v4f color, f32 head_size);
-void draw_rect   (XRenderBatch *batch, v2f pos, v2f size, v4f color);
+void draw_line   (XRenderBatch *batch, v2 a,   v2 b,    v4 color);
+void draw_arrow  (XRenderBatch *batch, v2 a,   v2 b,    v4 color, f32 head_size);
+void draw_rect   (XRenderBatch *batch, v2 pos, v2 size, v4 color);
 
-void draw_sprite (XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite sprite);
+void draw_sprite (XRenderBatch *batch, v2 pos, v2 size, v4 color, XSprite sprite);
 
-void draw_circle (XRenderBatch *batch, v2f pos, v4f color, f32 radius);
+void draw_circle (XRenderBatch *batch, v2 pos, v4 color, f32 radius);
 
-void draw_rect_rounded (XRenderBatch *batch, v2f pos, v2f size, v4f color, f32 radius);
+void draw_rect_rounded (XRenderBatch *batch, v2 pos, v2 size, v4 color, f32 radius);
 
-void draw_text   (XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text);
-void draw_grid   (XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color);
+void draw_text   (XRenderBatch *batch, v2 pos, v4 color, XFont *font, char *text);
+void draw_grid   (XRenderBatch *batch, v2 gap, v2 line_thickness, v4 color);
 
 void xrender2d_reset_batch(XRenderBatch *batch);
 
@@ -250,14 +250,14 @@ void xrender2d_reset_batch(XRenderBatch *batch);
    FONTS / GLYPHS
    ========================================================================= */
 
-XFont *  xrender2d_font        (wchar_t *path, wchar_t *name, int heightpoints);
+XFont *  xrender2d_font        (char *path, char *name, int heightpoints);
 XSprite  xrender2d_font_glyph  (XFont *font, u32 c);
 void     xrender2d_font_free   (XFont *font);
-v2f      xrender2d_font_dim    (XFont *font, wchar_t *text);
+void     xrender2d_font_dim    (XFont *font, char *text, v2 dest);
 
-void     xrender2d_break_text  (wchar_t *lines, u32 *lengths, u32 *lineCount, 
+void     xrender2d_break_text  (char *lines, u32 *lengths, u32 *lineCount, 
                                 u32 maxLineCount, u32 maxLineCharCount, 
-                                XFont *font, wchar_t *str, f32 maxWidth);
+                                XFont *font, char *str, f32 maxWidth);
 
 
 
@@ -275,8 +275,8 @@ png file located at path, i.e., it loads the png and copies the bytes of the
 texture into the texture atlas and fills XXSprite with the corresponding uv coo
 rdinates and other info about the source image. */
 
-u8 *      xrender2d_load_png(wchar_t *path, v2i *dim);
-XSprite   xrender2d_sprite_from_png   (wchar_t *path);
+u8 *      xrender2d_load_png(char *path, v2i dim);
+XSprite   xrender2d_sprite_from_png   (char *path);
 XSprite   xrender2d_sprite_from_bytes (u8 *b, v2i dim);
 
 /* =========================================================================
@@ -301,15 +301,15 @@ XSprite   xrender2d_sprite_from_bytes (u8 *b, v2i dim);
 
 typedef struct
 {
-    v3f position;
-    v4f color;
+    v3 position;
+    v4 color;
 } LineVertex;
 
 typedef struct
 {
-    v3f position;
-    v3f uvs;
-    v4f color;
+    v3 position;
+    v3 uvs;
+    v4 color;
 } TexturedVertex;
 
 void xrender2d_create_line_pass(void);
@@ -338,7 +338,7 @@ XRenderCommand *xrender2d_push_command(XRenderBatch *batch);
    IMPLEMENTATION
    ========================================================================= */
 
-function void initialize_font_dc(void);
+static void initialize_font_dc(void);
 
 /* Lines Vertex shader */
 char *linesVS = 
@@ -363,7 +363,7 @@ char *linesVS =
 "{"
 "  vs_out output = (vs_out)0;"
 "  float4 pos = float4(input.position_local, 1.0);"
-"  pos.z += 500;"
+"  pos[2] += 500;"
 
 "  output.position_clip = mul(pos, WVP);"
 "  output.color = input.color;"
@@ -408,7 +408,7 @@ char *spritesVS =
 "{"
 "  vs_out output = (vs_out)0;"
 "  float4 pos = float4(input.position_local, 1.0);"
-"  pos.z += 500;"
+"  pos[2] += 500;"
 
 "  output.position_clip = mul(pos, WVP);"
 "  output.uv = input.uv;"
@@ -433,143 +433,139 @@ char *spritesPS =
 "  return tex.Sample(samp, input.uv) * input.color;"
 "}";
 
-void draw_line(XRenderBatch *batch, v2f a, v2f b, v4f color)
-{
+void draw_line(XRenderBatch *batch, v2 a, v2 b, v4 color) {
     XRenderCommand *command = xrender2d_push_command(batch);
     command->type = XRenderCommandType_line;
-    command->line.a = a;
-    command->line.b = b;
-    command->line.color = color;
+    v2_copy(a, command->line.a);
+    v2_copy(b, command->line.b);
+    v4_copy(color, command->line.color);
 }
 
-void draw_arrow(XRenderBatch *batch, v2f a, v2f b, v4f color, f32 head_size)
-{
-    if (a.x != b.x || a.y != b.y)
-    {
+void draw_arrow(XRenderBatch *batch, v2 a, v2 b, v4 color, f32 headSize) {
+    if (a[0] != b[0] || a[1] != b[1]) {
         draw_line(batch, a, b, color);
         
-        v2f dir = nrm2f(sub2f(b, a));
-        v2f normal = {-dir.y, dir.x};
+        v2 dir;
+        v2_sub(b, a, dir);
+        v2_normalize(dir);
+        v2 normal = {-dir[1], dir[0]};
         
-        v2f back = sub2f(b, mul2f(head_size, dir));
-        v2f head_a = add2f(back, mul2f(+head_size, normal));
-        v2f head_b = add2f(back, mul2f(-head_size, normal));
+        v2 headSizeTimesDir;
+        v2_mul(headSize, dir, headSizeTimesDir);
         
-        draw_line(batch, b, head_a, color);
-        draw_line(batch, b, head_b, color);
+        v2 back;
+        v2_sub(b, headSizeTimesDir, back);
+        
+        v2 posHeadSizeTimesNormal, negHeadSizeTimesNormal;
+        v2 headA, headB;
+        
+        v2_mul(+headSize, normal, posHeadSizeTimesNormal);
+        v2_mul(-headSize, normal, negHeadSizeTimesNormal);
+        
+        v2_add(back, posHeadSizeTimesNormal, headA);
+        v2_add(back, negHeadSizeTimesNormal, headB);
+        
+        draw_line(batch, b, headA, color);
+        draw_line(batch, b, headB, color);
     }
 }
 
-void draw_rect(XRenderBatch *batch, v2f pos, v2f size, v4f color)
-{
+void draw_rect(XRenderBatch *batch, v2 pos, v2 size, v4 color) {
     XRenderCommand *command = xrender2d_push_command(batch);
     command->type = XRenderCommandType_rect;
-    command->sprite.position = pos;
-    command->sprite.size = size;
-    command->sprite.color = color;
+    v2_copy(pos, command->sprite.position);
+    v2_copy(size, command->sprite.size);
+    v4_copy(color, command->sprite.color);
 }
 
-void draw_sprite(XRenderBatch *batch, v2f pos, v2f size, v4f color, XSprite sprite)
-{
+void draw_sprite(XRenderBatch *batch, v2 pos, v2 size, v4 color, XSprite sprite) {
     XRenderCommand *command = xrender2d_push_command(batch);
     command->type = XRenderCommandType_sprite;
-    command->sprite.position = pos;
-    command->sprite.size = size;
-    command->sprite.color = color;
+    v2_copy(pos, command->sprite.position);
+    v2_copy(size, command->sprite.size);
+    v4_copy(color, command->sprite.color);
     command->sprite.sprite = sprite;
 }
 
 void
-draw_circle(XRenderBatch *batch, v2f pos, v4f color, f32 radius) {
-    draw_sprite(batch, 
-                sub2f(pos, (v2f){radius,radius}),
-                (v2f){2*radius,2*radius}, 
-                color, 
-                sprite_circle);
+draw_circle(XRenderBatch *batch, v2 pos, v4 color, f32 radius) {
+    v2 posMinusRadius;
+    v2_sub(pos, (v2){radius,radius}, posMinusRadius);
+    draw_sprite(batch, posMinusRadius, (v2){2*radius,2*radius}, 
+                color, sprite_circle);
 }
 
 void
-draw_rect_rounded(XRenderBatch *batch, v2f pos, v2f size, v4f color, f32 radius) {
-    v2f dim = (v2f){radius,radius};
-    draw_sprite(batch, 
-                pos, 
-                dim, 
-                color,
-                sprite_circle_tl);
+draw_rect_rounded(XRenderBatch *batch, v2 pos, v2 size, v4 color, f32 radius) {
+    v2 dim;
+    v2_copy((v2){radius,radius}, dim);
+    draw_sprite(batch, pos, dim, color, sprite_circle_tl);
     
-    draw_sprite(batch, 
-                add2f(pos, (v2f){size.x-radius,0}), 
-                dim, 
-                color,
-                sprite_circle_tr);
+    v2 posPlusSizeX;
+    v2_add(pos, (v2){size[0]-radius,0}, posPlusSizeX);
     
-    draw_sprite(batch, 
-                add2f(pos, (v2f){0,size.y-radius}),
-                dim, 
-                color,
-                sprite_circle_bl);
+    draw_sprite(batch, posPlusSizeX, dim, color, sprite_circle_tr);
     
-    draw_sprite(batch, 
-                add2f(pos, (v2f){size.x-radius,size.y-radius}), 
-                dim, 
-                color,
-                sprite_circle_br);
+    v2 posPlusSizeY;
+    v2_add(pos, (v2){0,size[1]-radius}, posPlusSizeY);
+    draw_sprite(batch, posPlusSizeY, dim, color, sprite_circle_bl);
     
-    f32 posXPlusRadius = floorf(pos.x + radius);
-    f32 posYPlusRadius = floorf(pos.y + radius);
+    v2 posPlusSizeXY;
+    v2_add(pos, (v2){size[0]-radius,size[1]-radius}, posPlusSizeXY);
+    draw_sprite(batch, posPlusSizeXY, dim, color, sprite_circle_br);
+    
+    f32 posXPlusRadius = (pos[0] + radius);
+    f32 posYPlusRadius = (pos[1] + radius);
     
     /* Center */
     draw_rect(batch,
-              (v2f){posXPlusRadius, pos.y},
-              (v2f){floorf(size.x-2*radius)+3,size.y},
+              (v2){posXPlusRadius, pos[1]},
+              (v2){(size[0]-2*radius),size[1]},
               color);
     
     /* Left strip */
     draw_rect(batch,
-              (v2f){pos.x, posYPlusRadius},
-              (v2f){ceilf(radius),floorf(size.y-2*radius)},
+              (v2){pos[0], posYPlusRadius},
+              (v2){(radius),(size[1]-2*radius)},
               color);
     
+    v2 lastP;
+    v2_add(pos, (v2){size[0]-radius,radius}, lastP);
     /* Right strip */
-    draw_rect(batch,
-              add2f(pos, (v2f){size.x-radius,radius}),
-              (v2f){radius,floorf(size.y-2*radius)},
-              color);
-    
+    draw_rect(batch, lastP, (v2){radius,(size[1]-2*radius)}, color);
 }
 
 
-void draw_text(XRenderBatch *batch, v2f pos, v4f color, XFont *font, wchar_t *text)
-{
+void draw_text(XRenderBatch *batch, v2 pos, v4 color, XFont *font, char *text) {
     XRenderCommand *command = xrender2d_push_command(batch);
     command->type = XRenderCommandType_text;
-    command->text.position = pos;
-    command->text.color = color;
+    v2_copy(pos, command->text.position);
+    v4_copy(color, command->text.color);
     command->text.font = font;
     command->text.length = xstrlen(text);
     command->text.text = xstrnew(text);
 }
 
-void draw_grid(XRenderBatch *batch, v2f gap, v2f line_thickness, v4f color)
+void draw_grid(XRenderBatch *batch, v2 gap, v2 line_thickness, v4 color)
 {
     v2i grid_horizontal_line_count = 
     {
-        (s32)ceilf(xd11.bbDim.x / gap.x),
-        (s32)ceilf(xd11.bbDim.y / gap.y),
+        (s32)ceilf(xd11.bbDim[0] / gap[0]),
+        (s32)ceilf(xd11.bbDim[1] / gap[1]),
     };
     
     /* Draw vertical lines */
-    for (s32 x=0; x<grid_horizontal_line_count.x; ++x)
+    for (s32 x=0; x<grid_horizontal_line_count[0]; ++x)
         draw_rect(batch, 
-                  (v2f){x*gap.x, 0}, 
-                  (v2f){line_thickness.x, xd11.bbDim.y}, 
+                  (v2){x*gap[0], 0}, 
+                  (v2){line_thickness[0], xd11.bbDim[1]}, 
                   color);
     
     /* Draw horizontal lines */
-    for (s32 y=0; y<grid_horizontal_line_count.y; ++y)
+    for (s32 y=0; y<grid_horizontal_line_count[1]; ++y)
         draw_rect(batch, 
-                  (v2f){0, y*gap.y}, 
-                  (v2f){xd11.bbDim.x, line_thickness.y}, 
+                  (v2){0, y*gap[1]}, 
+                  (v2){xd11.bbDim[0], line_thickness[1]}, 
                   color);
     
 }
@@ -662,11 +658,11 @@ void xrender2d_depth_stencil(XD11DepthStencil *depth_stencil,
     depth_stencil->state = xd11_depth_stencil_state(desc_state);
 }
 
-void xrender2d_initialize(v4f clear_color)
+void xrender2d_initialize(v4 clear_color)
 {
     initialize_font_dc();
     
-    xrender2d.clear_color = clear_color;
+    v4_copy(clear_color, xrender2d.clear_color);
     
     /* Get back buffer texture from swap chain */    
     xrender2d.target_default.texture = xd11_swapchain_get_buffer();
@@ -680,8 +676,8 @@ void xrender2d_initialize(v4f clear_color)
     xrender2d_depth_stencil(&xrender2d.target_default.depth_stencil,
                             (D3D11_TEXTURE2D_DESC)
                             {
-                                (s32)xd11.bbDim.x, // Width
-                                (s32)xd11.bbDim.y, // Height
+                                (s32)xd11.bbDim[0], // Width
+                                (s32)xd11.bbDim[1], // Height
                                 0, // Mip levels
                                 1, // Array size
                                 DXGI_FORMAT_D24_UNORM_S8_UINT, // Format
@@ -716,7 +712,7 @@ void xrender2d_initialize(v4f clear_color)
     
     /* Texture array */
     {
-        u32 textureArraySide = 512;
+        u32 textureArraySide = 2048;
         xrender2d.textures.mipLevels  = 9;
         
         /* Create D3D11 texture */
@@ -734,8 +730,11 @@ void xrender2d_initialize(v4f clear_color)
             D3D11_RESOURCE_MISC_GENERATE_MIPS // Misc flags
         };
         xrender2d.textures.tex.handle = xd11_texture2d(desc, 0);
-        xrender2d.textures.tex.dim    = fil2i(textureArraySide);
-        xrender2d.textures.dim        = fil2i(textureArraySide);
+        
+        xrender2d.textures.tex.dim[0] = textureArraySide;
+        xrender2d.textures.tex.dim[1] = textureArraySide;
+        xrender2d.textures.dim[0] = textureArraySide;
+        xrender2d.textures.dim[1] = textureArraySide;
         
         /* Create the shader resource view */
         xrender2d.textures.tex.view = 
@@ -873,7 +872,7 @@ void xrender2d_create_line_pass(void)
     xrender2d.pass_lines.vShaderCBuffers[0] = 
         xd11_buffer((D3D11_BUFFER_DESC)
                     {
-                        sizeof(mat4f),
+                        sizeof(mat4),
                         D3D11_USAGE_DEFAULT, 
                         D3D11_BIND_CONSTANT_BUFFER,
                         0,
@@ -888,7 +887,7 @@ void xrender2d_create_line_pass(void)
     /* Viewports */
     xrender2d.pass_lines.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&xrender2d.pass_lines.viewports, 
-               &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
+               &(D3D11_VIEWPORT){0,0,xd11.bbDim[0],xd11.bbDim[1], 0, 1});
 }
 
 void xrender2d_create_sprite_pass(void)
@@ -985,7 +984,7 @@ void xrender2d_create_sprite_pass(void)
     xrender2d.pass_sprites.vShaderCBuffers[0] = 
         xd11_buffer((D3D11_BUFFER_DESC)
                     {
-                        sizeof(mat4f),
+                        sizeof(mat4),
                         D3D11_USAGE_DEFAULT, 
                         D3D11_BIND_CONSTANT_BUFFER,
                         0,
@@ -1000,7 +999,7 @@ void xrender2d_create_sprite_pass(void)
     /* Viewports */
     xrender2d.pass_sprites.viewports = Array_new(1, sizeof(D3D11_VIEWPORT));
     Array_push(&xrender2d.pass_sprites.viewports,
-               &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
+               &(D3D11_VIEWPORT){0,0,xd11.bbDim[0],xd11.bbDim[1], 0, 1});
 }
 
 void xrender2d_create_resources(void)
@@ -1009,63 +1008,53 @@ void xrender2d_create_resources(void)
     
     /* white.png */
     {
-        wchar_t full_path[512];
-        xwin_path_abs(full_path, 512, L"images/white.png");
+        char full_path[512];
+        xwin_path_abs(full_path, 512, "images/white.png");
         sprite_white = xrender2d_sprite_from_png(full_path);
+        /* Since we stretch a lot this by using raw rect, we need to 
+ cheat a little and give some padding to the uv coords to avoid
+ artifactcs in the borders of rects */ 
+        sprite_white.uvs.min[0] += 0.3f * (sprite_white.uvs.max[0]-sprite_white.uvs.min[0]);
+        sprite_white.uvs.min[1] += 0.3f * (sprite_white.uvs.max[1]-sprite_white.uvs.min[1]);
+        sprite_white.uvs.max[0] -= 0.3f * (sprite_white.uvs.max[0]-sprite_white.uvs.min[0]);
+        sprite_white.uvs.max[1] -= 0.3f * (sprite_white.uvs.max[1]-sprite_white.uvs.min[1]);
     }
     
     /* circle.png */
     {
-        wchar_t full_path[512];
-        xwin_path_abs(full_path, 512, L"images/circle.png");
+        char full_path[512];
+        xwin_path_abs(full_path, 512, "images/circle.png");
         sprite_circle = xrender2d_sprite_from_png(full_path);
     }
     
     /* arrow.png */
     {
-        wchar_t full_path[512];
-        xwin_path_abs(full_path, 512, L"images/arrow.png");
+        char full_path[512];
+        xwin_path_abs(full_path, 512, "images/arrow.png");
         sprite_arrow = xrender2d_sprite_from_png(full_path);
     }
     
     /* Make circle quadrants */
-    s32 circleWidth = sprite_circle.dim.x;
-    s32 circleHeight = sprite_circle.dim.y;
+    s32 circleWidth = sprite_circle.dim[0];
+    s32 circleHeight = sprite_circle.dim[1];
     f32 circleQuadrantWidth = circleWidth/2.0f;
     f32 circleQuadrantHeight = circleHeight/2.0f;
     
-    f32 circleUVWidth = sprite_circle.uvs.max.x - sprite_circle.uvs.min.x;
-    f32 circleUVHeight = sprite_circle.uvs.max.y - sprite_circle.uvs.min.y;
+    f32 uu = (sprite_circle.uvs.max[0]-sprite_circle.uvs.min[0])/2;
+    f32 vv = (sprite_circle.uvs.max[1]-sprite_circle.uvs.min[1])/2;
     
-    f32 circleQuadrantUVWidth = circleUVWidth/2;
-    f32 circleQuadrantUVHeight = circleUVHeight/2;
-    
-    sprite_circle_tl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y, sprite_circle.uvs.min.z};
-    sprite_circle_tl.uvs.max = (v3f){
-        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
-        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
-        sprite_circle.uvs.min.z
-    };
-    
-    sprite_circle_bl.uvs.min = (v3f){sprite_circle.uvs.min.x, sprite_circle.uvs.min.y + circleQuadrantUVHeight};
-    sprite_circle_bl.uvs.max = (v3f){sprite_circle.uvs.min.x + circleQuadrantUVWidth, sprite_circle.uvs.max.y};
-    
-    sprite_circle_br.uvs.min = (v3f){
-        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
-        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
-        sprite_circle.uvs.min.z
-    };
-    sprite_circle_br.uvs.max = (v3f){sprite_circle.uvs.max.x, sprite_circle.uvs.max.y, sprite_circle.uvs.min.z};
-    
-    sprite_circle_tr.uvs.min = (v3f){
-        sprite_circle.uvs.min.x + circleQuadrantUVWidth, 
-        sprite_circle.uvs.min.y,
-        sprite_circle.uvs.min.z
-    };
-    sprite_circle_tr.uvs.max = (v3f){
-        sprite_circle.uvs.max.x, 
-        sprite_circle.uvs.min.y + circleQuadrantUVHeight,
-        sprite_circle.uvs.min.z};
+    /* Top left */
+    f32 u = sprite_circle.uvs.min[0];
+    f32 v = sprite_circle.uvs.min[1];
+    f32 w = sprite_circle.uvs.min[2];
+    v3_copy((v3){u,v,w},         sprite_circle_tl.uvs.min);
+    v3_copy((v3){u+uu, v+vv, w}, sprite_circle_tl.uvs.max);
+    v3_copy((v3){u,v+vv,w},      sprite_circle_bl.uvs.min);
+    v3_copy((v3){u+uu,v, w},  sprite_circle_bl.uvs.max);
+    v3_copy((v3){u+uu, v+vv, w}, sprite_circle_br.uvs.min);
+    v3_copy((v3){u,v,w},         sprite_circle_br.uvs.max);
+    v3_copy((v3){u+uu, v, w},    sprite_circle_tr.uvs.min);
+    v3_copy((v3){u, v+vv, w},    sprite_circle_tr.uvs.max);
     
     //xd11_texture2d_update(&xrender2d.texture_atlas.texture, xrender2d.texture_atlas.bytes);
 }
@@ -1090,39 +1079,50 @@ void xrender2d_free_passes(void)
     xfree(xrender2d.target_views);
 }
 
-void xrender2d_push_rect_vertices(Array_T *array, v2f pos, v2f size, rect3f uv, v4f color)
+void xrender2d_push_rect_vertices(Array_T *array, v2 pos, v2 size, Rect3 uv, v4 color)
 {
+    f32 minx = (f32)((s32)pos[0]);
+    f32 miny = (f32)((s32)pos[1]);
+    f32 maxx = (f32)((s32)pos[0] + (s32)size[0]);
+    f32 maxy = (f32)((s32)pos[1] + (s32)size[1]);
+    
     /* Upper triangle */
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x, pos.y, 0}, 
-                   (v3f){uv.min.x, uv.min.y, uv.min.z}, 
-                   color});
+    TexturedVertex a;
+    v3_copy((v3){minx, miny, 0}, a.position);
+    v3_copy((v3){uv.min[0], uv.min[1], uv.min[2]}, a.uvs);
+    v4_copy(color, a.color);
+    Array_push(array, &a);
     
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x + size.x, pos.y, 0}, 
-                   (v3f){uv.max.x, uv.min.y, uv.min.z}, 
-                   color});
+    TexturedVertex b;
+    v3_copy((v3){maxx, miny, 0}, b.position);
+    v3_copy((v3){uv.max[0], uv.min[1], uv.min[2]}, b.uvs);
+    v4_copy(color, b.color);
+    Array_push(array, &b);
     
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x + size.x, pos.y + size.y, 0}, 
-                   (v3f){uv.max.x, uv.max.y, uv.min.z}, 
-                   color});
+    TexturedVertex c;
+    v3_copy((v3){maxx, maxy, 0}, c.position);
+    v3_copy((v3){uv.max[0], uv.max[1], uv.min[2]}, c.uvs);
+    v4_copy(color, c.color);
+    Array_push(array, &c);
     
     /* Lower triangle */
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x, pos.y, 0}, 
-                   (v3f){uv.min.x, uv.min.y, uv.min.z}, 
-                   color});
+    TexturedVertex d;
+    v3_copy((v3){minx, miny, 0}, d.position);
+    v3_copy((v3){uv.min[0], uv.min[1], uv.min[2]}, d.uvs);
+    v4_copy(color, d.color);
+    Array_push(array, &d);
     
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x + size.x, pos.y + size.y, 0}, 
-                   (v3f){uv.max.x, uv.max.y, uv.min.z}, 
-                   color});
+    TexturedVertex e;
+    v3_copy((v3){maxx, maxy, 0}, e.position);
+    v3_copy((v3){uv.max[0], uv.max[1], uv.min[2]}, e.uvs);
+    v4_copy(color, e.color);
+    Array_push(array, &e);
     
-    Array_push(array, &(TexturedVertex){
-                   (v3f){pos.x, pos.y + size.y, 0}, 
-                   (v3f){uv.min.x, uv.max.y, uv.min.z}, 
-                   color});
+    TexturedVertex f;
+    v3_copy((v3){minx, maxy, 0}, f.position);
+    v3_copy((v3){uv.min[0], uv.max[1], uv.min[2]}, f.uvs);
+    v4_copy(color, f.color);
+    Array_push(array, &f);
 }
 
 void xrender2d_produce_vertices(XRenderBatch *batch, 
@@ -1136,57 +1136,69 @@ void xrender2d_produce_vertices(XRenderBatch *batch,
         {
             case XRenderCommandType_line:
             {
-                Array_push(lineVertices, 
-                           &(LineVertex){(v3f){c->line.a.x, c->line.a.y, 0}, c->line.color});
-                Array_push(lineVertices, 
-                           &(LineVertex){(v3f){c->line.b.x, c->line.b.y, 0}, c->line.color});
+                LineVertex a, b;
+                v3_copy((v3){c->line.a[0], c->line.a[1], 0}, a.position);
+                v4_copy(c->line.color, a.color);
+                v3_copy((v3){c->line.b[0], c->line.b[1], 0}, b.position);
+                v4_copy(c->line.color, b.color);
+                
+                Array_push(lineVertices, &a);
+                Array_push(lineVertices, &b);
             } break;
             
             case XRenderCommandType_rect:
             {
-                v2f pos = c->rect.position;
-                v2f size = c->rect.size;
-                v4f color = c->rect.color;
-                rect3f uvs = sprite_white.uvs;
+                v2 pos, size;
+                v2_copy(c->rect.position, pos);
+                v2_copy(c->rect.size, size);
+                v4 color;
+                v4_copy(c->rect.color, color);
+                Rect3 uvs = sprite_white.uvs;
                 xrender2d_push_rect_vertices(texVertices, pos, size, uvs, color);
             } break;
             
             case XRenderCommandType_sprite:
             {
-                v2f pos = c->sprite.position;
-                v2f size = c->sprite.size;
-                rect3f uvs = c->sprite.sprite.uvs;
-                v4f color = c->sprite.color;
+                v2 pos, size;
+                v2_copy(c->sprite.position, pos);
+                v2_copy(c->sprite.size, size);
+                Rect3 uvs = c->sprite.sprite.uvs;
+                v4 color;
+                v4_copy(c->sprite.color, color);
                 xrender2d_push_rect_vertices(texVertices, pos, size, uvs, color);
             } break;
             
             case XRenderCommandType_text:
             {
                 u32 lastCodePoint = 0;
-                wchar_t *at = c->text.text;
-                v4f color = c->text.color;
-                v2f pos = c->text.position;
+                char *at = c->text.text;
+                v4 color;
+                v4_copy(c->text.color, color);
+                v2 pos;
+                v2_copy(c->text.position, pos);
                 while (*at != 0) {
                     XFontGlyph *glyph = c->text.font->glyphs + c->text.font->glyphIndexFromCodePoint[*at];
                     if (glyph) {
                         XSprite *sprite = &glyph->sprite;
-                        v2i dim = sprite->dim;
-                        rect3f uvs = sprite->uvs;
+                        v2i dim;
+                        v2i_copy(sprite->dim, dim);
+                        Rect3 uvs = sprite->uvs;
                         u32 codePoint = (u32)*at;
                         
                         /* Advance based on kerning */
                         if (lastCodePoint) {
-                            pos.x += c->text.font->horizontalAdvance[lastCodePoint*c->text.font->maxGlyphCount + codePoint];
+                            pos[0] += c->text.font->horizontalAdvance[lastCodePoint*c->text.font->maxGlyphCount + codePoint];
                         }
                         
                         /* glyph alignments */
-                        v2f glyph_pos = pos;
-                        glyph_pos.x -= sprite->align.x*dim.x;
+                        v2 glyph_pos;
+                        v2_copy(pos, glyph_pos);
+                        glyph_pos[0] -= sprite->align[0]*dim[0];
                         
-                        glyph_pos.y -= dim.y - sprite->align.y*dim.y;
-                        glyph_pos.y += c->text.font->metrics.tmAscent;
+                        glyph_pos[1] -= dim[1] - sprite->align[1]*dim[1];
+                        glyph_pos[1] += c->text.font->metrics.tmAscent;
                         
-                        xrender2d_push_rect_vertices(texVertices, glyph_pos, (v2f){(f32)dim.x,(f32)dim.y}, uvs, color);
+                        xrender2d_push_rect_vertices(texVertices, glyph_pos, (v2){(f32)dim[0],(f32)dim[1]}, uvs, color);
                         lastCodePoint = codePoint;
                     }
                     
@@ -1207,10 +1219,9 @@ void xrender2d_produce_vertices(XRenderBatch *batch,
 
 void xrender2d_update_line_pass(void)
 {
-    mat4f matrixProjection =
-    {
-        2.0f / xd11.bbDim.x, 0, 0, -1,
-        0, -2.0f / xd11.bbDim.y, 0, 1.f,
+    mat4 matrixProjection = {
+        2.0f / xd11.bbDim[0], 0, 0, -1,
+        0, -2.0f / xd11.bbDim[1], 0, 1.f,
         0, 0, .001f, 0,
         0, 0, 0, 1,
     };
@@ -1228,22 +1239,21 @@ void xrender2d_update_line_pass(void)
     
     /* Update viewport */
     Array_set(xrender2d.pass_lines.viewports, 0, 
-              &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
+              &(D3D11_VIEWPORT){0,0,xd11.bbDim[0],xd11.bbDim[1], 0, 1});
     
     
     LineVertex data[2] =
     {
         {{0,0,0}, {1,1,1,1}},
-        {{xd11.bbDim.x,xd11.bbDim.y,0}, {1,1,1,1}},
+        {{xd11.bbDim[0],xd11.bbDim[1],0}, {1,1,1,1}},
     };
 }
 
 void xrender2d_update_sprite_pass(void)
 {
-    mat4f matrixProjection =
-    {
-        2.0f / xd11.bbDim.x, 0, 0, -1,
-        0, -2.0f / xd11.bbDim.y, 0, 1.f,
+    mat4 matrixProjection = {
+        2.0f / xd11.bbDim[0], 0, 0, -1,
+        0, -2.0f / xd11.bbDim[1], 0, 1.f,
         0, 0, .001f, 0,
         0, 0, 0, 1,
     };
@@ -1252,7 +1262,7 @@ void xrender2d_update_sprite_pass(void)
     
     /* Update viewport and scissor rect*/
     Array_set(xrender2d.pass_sprites.viewports, 0,
-              &(D3D11_VIEWPORT){0,0,xd11.bbDim.x,xd11.bbDim.y, 0, 1});
+              &(D3D11_VIEWPORT){0,0,xd11.bbDim[0],xd11.bbDim[1], 0, 1});
 }
 
 void xd11_resized(void)
@@ -1277,8 +1287,8 @@ void xd11_resized(void)
     /* Resize the swapchain buffers */
     IDXGISwapChain_ResizeBuffers(xd11.swapChain,
                                  2, 
-                                 (UINT)xd11.bbDim.x,
-                                 (UINT)xd11.bbDim.y, 
+                                 (UINT)xd11.bbDim[0],
+                                 (UINT)xd11.bbDim[1], 
                                  DXGI_FORMAT_R8G8B8A8_UNORM, 
                                  0);
     
@@ -1288,8 +1298,8 @@ void xd11_resized(void)
     /* Create default target depth stencil texture */
     xrender2d.target_default.depth_stencil.texture = xd11_texture2d((D3D11_TEXTURE2D_DESC)
                                                                     {
-                                                                        (s32)xd11.bbDim.x,
-                                                                        (s32)xd11.bbDim.y,
+                                                                        (s32)xd11.bbDim[0],
+                                                                        (s32)xd11.bbDim[1],
                                                                         0, 
                                                                         1,
                                                                         DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -1325,19 +1335,16 @@ void xd11_resized(void)
     xrender2d.pass_lines.targetView = xrender2d.target_views[0];
 }
 
-u8 *xrender2d_load_png(wchar_t *path, v2i *dim) {
+u8 *xrender2d_load_png(char *path, v2i dim) {
     u8 *r, *rowDst, *rowSrc;
     int w,h, i,j, nrChannels, dataSize;
-    char *asciiPath;
     u32 *pxDst, *pxSrc, cr,cg,cb,ca;
     
     r=0;
-    asciiPath = xstrtoascii(path);
-    unsigned char *data = stbi_load(asciiPath, &w, &h, &nrChannels, 0);
-    xfree(asciiPath);
+    unsigned char *data = stbi_load(path, &w, &h, &nrChannels, 0);
     if (data)
     {
-        *dim = (v2i){w,h};
+        v2i_copy((v2i){w,h}, dim);
         
         dataSize = w*h*nrChannels;
         r = (u8 *)xalloc(dataSize);
@@ -1373,25 +1380,25 @@ u8 *xrender2d_load_png(wchar_t *path, v2i *dim) {
         stbi_image_free(data);
     }
     else
-        *dim = (v2i){0,0};
+        v2i_copy((v2i){0,0}, dim);
     
     return r;
 }
 
 XSprite xrender2d_sprite_from_bytes(u8 *b, v2i dim) {
     XSprite r = {0};
-    r.dim = dim;
+    v2i_copy(dim, r.dim);
     r.uvs = xd11_texarray_put(&xrender2d.textures, b, dim);
     return r;
 }
 
-XSprite xrender2d_sprite_from_png(wchar_t *path) {
+XSprite xrender2d_sprite_from_png(char *path) {
     XSprite r;
     v2i dim;
     u8 *b;
     
     memset(&r, 0, sizeof(r));
-    b = xrender2d_load_png(path, &dim);
+    b = xrender2d_load_png(path, dim);
     if (b)
     {
         r = xrender2d_sprite_from_bytes(b, dim);
@@ -1401,19 +1408,20 @@ XSprite xrender2d_sprite_from_png(wchar_t *path) {
 }
 
 XFont *
-xrender2d_font(wchar_t *path, wchar_t *name, s32 pixelHeight)
+xrender2d_font(char *path, char *name, s32 pixelHeight)
 {
     XFont *result = xalloc(sizeof *result);
     
     /* Init the atlas */
-    v2i atlasDim = xrender2d.textures.dim;
+    v2i atlasDim;
+    v2i_copy(xrender2d.textures.dim, atlasDim);
     s32 uvZ = xrender2d.textures.at;
     xtexture_atlas_init(&result->atlas, atlasDim, uvZ);
     /* Allocate space for the cpu bytes */
-    result->atlasBytes = xalloc(atlasDim.x*atlasDim.y*4);
+    result->atlasBytes = xalloc(atlasDim[0]*atlasDim[1]*4);
     
-    AddFontResourceExW(path, FR_PRIVATE, 0);
-    result->handle = CreateFontW(pixelHeight, 0, 0, 0,
+    AddFontResourceExA(path, FR_PRIVATE, 0);
+    result->handle = CreateFontA(pixelHeight, 0, 0, 0,
                                  FW_NORMAL, 
                                  false, 
                                  false, 
@@ -1471,7 +1479,7 @@ xrender2d_font(wchar_t *path, wchar_t *name, s32 pixelHeight)
     
     xfree(result->atlasBytes);
     
-    xstrcpy(result->path, MAX_PATH, path);
+    xstrcpy(result->path, path);
     
     /* FinalizeFontKerning */
     DWORD KerningPairCount = GetKerningPairsW(globalFontDeviceContext, 0, 0);
@@ -1502,7 +1510,7 @@ xrender2d_font(wchar_t *path, wchar_t *name, s32 pixelHeight)
     return result;
 }
 
-function void
+static void
 initialize_font_dc(void)
 {
     globalFontDeviceContext = CreateCompatibleDC(GetDC(0));
@@ -1524,62 +1532,51 @@ initialize_font_dc(void)
     SetBkColor(globalFontDeviceContext, RGB(0, 0, 0));
 }
 
-inline v4f
-SRGB255ToLinear1(v4f C)
-{
-    v4f Result;
-    
+inline void
+SRGB255ToLinear1(v4 C, v4 dest) {
     f32 Inv255 = 1.0f / 255.0f;
     
-    Result.r = sq(Inv255*C.r);
-    Result.g = sq(Inv255*C.g);
-    Result.b = sq(Inv255*C.b);
-    Result.a = Inv255*C.a;
-    
-    return(Result);
+    dest[0] = f32_square(Inv255*C[0]);
+    dest[1] = f32_square(Inv255*C[1]);
+    dest[2] = f32_square(Inv255*C[2]);
+    dest[3] = Inv255*C[3];
 }
 
-inline v4f
-Linear1ToSRGB255(v4f C)
-{
-    v4f Result;
-    
+inline void
+Linear1ToSRGB255(v4 C, v4 dest) {
     f32 One255 = 255.0f;
     
-    Result.r = One255*sqrtf(C.r);
-    Result.g = One255*sqrtf(C.g);
-    Result.b = One255*sqrtf(C.b);
-    Result.a = One255*C.a;
-    
-    return(Result);
+    dest[0] = One255*sqrtf(C[0]);
+    dest[1] = One255*sqrtf(C[1]);
+    dest[2] = One255*sqrtf(C[2]);
+    dest[3] = One255*C[3];
 }
 
-void blit_unchecked(u8 *dst, v2i dest_size, u8 *src, v2i at, v2i dim)
-{
+void blit_unchecked(u8 *dst, v2i dest_size, u8 *src, v2i at, v2i dim) {
     u8 *rowSrc, *rowDst;
     u32 *pxSrc, *pxDst;
     
-    u32 dstStride = dest_size.x*4;
+    u32 dstStride = dest_size[0]*4;
     
     rowSrc=src;
-    rowDst=dst + at.y*dstStride + at.x*4;
+    rowDst=dst + at[1]*dstStride + at[0]*4;
     
-    for (at.y=0; at.y<dim.y; ++at.y)
+    for (at[1]=0; at[1]<dim[1]; ++at[1])
     {
         pxSrc=(u32 *)rowSrc;
         pxDst=(u32 *)rowDst;
         
-        for (at.x=0; at.x<dim.x; ++at.x)
+        for (at[0]=0; at[0]<dim[0]; ++at[0])
             *pxDst++ = *pxSrc++;
         
-        rowSrc += 4*dim.x;
+        rowSrc += 4*dim[0];
         rowDst += dstStride;
     }
 }
 
 
 XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
-    v2f alignPercentage;
+    v2 alignPercentage;
     XSprite r = {0};
     
     if (font->minCodePoint > codePoint)
@@ -1591,10 +1588,10 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
     u32 glyphIndex = font->glyphIndexFromCodePoint[codePoint];
     memset(globalFontBits, 0x00, MAX_FONT_WIDTH*MAX_FONT_HEIGHT*sizeof(u32));
     
-    wchar_t cheesePoint = (wchar_t)codePoint;
+    char cheesePoint = (char)codePoint;
     
     SIZE size;
-    GetTextExtentPoint32W(globalFontDeviceContext, &cheesePoint, 1, &size);
+    GetTextExtentPoint32A(globalFontDeviceContext, &cheesePoint, 1, &size);
     
     s32 preStepX = 128;
     
@@ -1611,7 +1608,7 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
     }
     
     SetTextColor(globalFontDeviceContext, RGB(255, 255, 255));
-    TextOutW(globalFontDeviceContext, preStepX, 0, &cheesePoint, 1);
+    TextOutA(globalFontDeviceContext, preStepX, 0, &cheesePoint, 1);
     
     s32 minX = 10000;
     s32 minY = 10000;
@@ -1641,7 +1638,7 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
         int resultWidth = width + 2;
         int resultHeight = height + 2;
         
-        r.dim = (v2i){resultWidth, resultHeight};
+        v2i_copy((v2i){resultWidth, resultHeight}, r.dim);
         s32 pitch = resultWidth * 4;
         void *memory = xalloc(resultHeight*pitch);
         
@@ -1656,14 +1653,14 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
             for (s32 x=minX; x<=maxX; ++x) {
                 u32 pixel = *source;
                 f32 gray = (f32)(pixel & 0xFF);
-                v4f texel = {255.0f, 255.0f, 255.0f, gray};
+                v4 texel = {255.0f, 255.0f, 255.0f, gray};
                 //texel = SRGB255ToLinear1(texel);
                 //texel.rgb *= texel.a;
                 //texel = Linear1ToSRGB255(texel);
-                *dest++ = (((u32)(texel.a + 0.5f) << 24) |
-                           ((u32)(texel.r + 0.5f) << 16) |
-                           ((u32)(texel.g + 0.5f) << 8) |
-                           ((u32)(texel.b + 0.5f) << 0));
+                *dest++ = (((u32)(texel[3] + 0.5f) << 24) |
+                           ((u32)(texel[0] + 0.5f) << 16) |
+                           ((u32)(texel[1] + 0.5f) << 8) |
+                           ((u32)(texel[2] + 0.5f) << 0));
                 ++source;
             }
             
@@ -1671,8 +1668,8 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
             sourceRow -= MAX_FONT_WIDTH;
         }
         
-        alignPercentage.x = (1.0f) / (f32)resultWidth;
-        alignPercentage.y = (1.0f + (maxY - (boundHeight - font->metrics.tmDescent))) /
+        alignPercentage[0] = (1.0f) / (f32)resultWidth;
+        alignPercentage[1] = (1.0f + (maxY - (boundHeight - font->metrics.tmDescent))) /
         (f32)resultHeight;
         
         kerningChange = (f32)(minX - preStepX);
@@ -1684,11 +1681,11 @@ XSprite xrender2d_font_glyph(XFont *font, u32 codePoint) {
                        memory, coords.at, r.dim);
         
         /* Continue the madness by flipping the uvs */
-        f32 tempMinY = r.uvs.min.y;
-        r.uvs.min.y = r.uvs.max.y;
-        r.uvs.max.y = tempMinY;
+        f32 tempMinY = r.uvs.min[1];
+        r.uvs.min[1] = r.uvs.max[1];
+        r.uvs.max[1] = tempMinY;
         
-        r.align = alignPercentage;
+        v2_copy(alignPercentage, r.align);
         
         xfree(memory);
         
@@ -1722,65 +1719,67 @@ void xrender2d_font_free(XFont *f)
     
     DeleteObject(f->bitmap);
     DeleteObject(f->handle);
-    RemoveFontResourceW(f->path);
+    RemoveFontResourceA(f->path);
     
     xfree(f);
 }
 
-v2f
-xrender2d_font_dim(XFont *font, wchar_t *text) {
+void
+xrender2d_font_dim(XFont *font, char *text, v2 dest) {
     u32 lastCodePoint = 0;
-    wchar_t *at = text;
-    v2f atP = (v2f){0,font->lineHeight};
+    char *at = text;
+    v2 atP;
+    v2_copy((v2){0,font->lineHeight}, atP);
     while (*at != 0)
     {
         u32 codePoint = (u32)*at;
         if (lastCodePoint) 
-            atP.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
+            atP[0] += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
         lastCodePoint = codePoint;
         ++at;
     }
     
-    atP.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + 0];
+    atP[0] += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + 0];
     
-    return (v2f){atP.x, atP.y};
+    dest[0] = atP[0];
+    dest[1] = atP[1];
 }
 
 
 /* NOTE: It is assumed that lines buffer will hold maxLineCount strings of maxLineCharCount length.
 ;        Is is assumed that maxLineCharCount is big enough to fit a line as big as maxWidth.
-;        This function will not break lines based on maxLineCharCount!
+;        This static will not break lines based on maxLineCharCount!
 ;
 ;        Each line will break at the last space before the next word would make the width of the line
 ;        be past maxWidth. Lines will hold an array with the resulting lines and lineCount will hold
 ;        the number of lines the string got broken into. */
 
-void xrender2d_break_text(wchar_t *lines, u32 *lengths, u32 *lineCount,
+void xrender2d_break_text(char *lines, u32 *lengths, u32 *lineCount,
                           u32 maxLineCount, u32 maxLineCharCount,
-                          XFont *font, wchar_t *str, f32 maxWidth) {
-    wchar_t *lastSpace = 0;
+                          XFont *font, char *str, f32 maxWidth) {
+    char *lastSpace = 0;
     u32 lastCodePoint = 0;
-    wchar_t *at = str;
+    char *at = str;
     u32 lineCharIndex = 0;
     u32 lineLastSpace = 0;
     
     *lineCount = 0;
-    memset(lines, 0, maxLineCount*maxLineCharCount*sizeof(wchar_t));
+    memset(lines, 0, maxLineCount*maxLineCharCount*sizeof(char));
     
     /* Break text into lines */
-    v2f p = {0,0};
-    wchar_t *lineStart = at;
+    v2 p = {0,0};
+    char *lineStart = at;
     while (*at != 0) {
         u32 codePoint = (u32)*at;
         
         /* If there was a glyph before this, advance the position based on kerning */
         if (lastCodePoint)
-            p.x += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
+            p[0] += font->horizontalAdvance[lastCodePoint*font->maxGlyphCount + codePoint];
         
         /* If the position is greated than the maximum width allowed */
-        if (p.x > maxWidth) {
+        if (p[0] > maxWidth) {
             /* Reset the x position and advance the y position */
-            p.x = 0;
+            p[0] = 0;
             
             /* Return the iterator to one past the last space position */
             at = lastSpace;

@@ -206,6 +206,7 @@ xfile_write(char *path, u8 *data, u32 size) {
     CloseHandle(h);
     return r;
 #endif
+    return true;
 }
 
 #endif

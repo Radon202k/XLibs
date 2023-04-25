@@ -25,9 +25,9 @@ typedef struct
     HICON icon;
     u32 wcStyle;
     u32 wcStyleEx;
-    wchar_t* wndTitle;
-    v2f wndP;
-    v2f wndDim;
+    char wndTitle[512];
+    v2 wndP;
+    v2 wndDim;
 } XD11Config;
 
 typedef struct
@@ -81,11 +81,11 @@ typedef struct
     
     DWORD wcStyleEx;
     DWORD wcStyle;
-    v2f bbDim;
-    v2f wndP;
-    v2f wndDim;
-    wchar_t wndTitle[256];
-    v4f clearColor;
+    v2 bbDim;
+    v2 wndP;
+    v2 wndDim;
+    char wndTitle[256];
+    v4 clearColor;
     
     /* State values */
     bool running;
@@ -128,7 +128,7 @@ void xd11_shutdown     (void);
 void xd11_update       (void);
 void xd11_resized      (void);
 
-v2f  xd11_monitor_size (void);
+void xd11_monitor_size (v2 dest);
 
 void xd11_log          (char *message);
 
@@ -140,13 +140,13 @@ void xd11_log          (char *message);
 ;        symbols to refer to the incredibly long names of Direct3d 11 api. 
 ;        Because it is extremely confusing to rename the entire api, this is
 ;        not repeated anywhere else, it is merely used here to line up the
-;        functions and make it easy to see relations between them. 
+;        statics and make it easy to see relations between them. 
    ;
 ; IMPORTANT: Make sure to realize that the symbols are undefined and defined
 ;            again constantly so they really dont mean anything, e.g., XBD
 ;            is first defined as D3D11_BLEND_DESC to describe the first few
-;            functions of the interface, and right after it is defined as
-;            D3D11_BUFFER_DESC to describe the next set of functions. */
+;            statics of the interface, and right after it is defined as
+;            D3D11_BUFFER_DESC to describe the next set of statics. */
 
 
 /* =========================================================================
@@ -200,7 +200,6 @@ XDSSP xd11_depth_stencil_state (XDSD desc);
 
 XRTBD xd11_target_blend_desc       (void);
 XTP   xd11_swapchain_buffer        (void);
-v2f   xd11_monitor_size            (void);
 void  xd11_swapchain_resize        (void); 
 XBD   xd11_const_buffer_desc       (s32 size);
 XRTVP xd11_target_view             (XTP texture);
@@ -210,7 +209,7 @@ XBP   xd11_buffer                  (XBD desc, XSRDP data);
 XTP   xd11_texture2d               (XTD desc, XSRDP data);
 XDSVP xd11_depth_stencil_view      (XTP dsTexture, XDSVD dsDesc);
 XSRVP xd11_shader_res_view         (XTP texture, XSRVD desc);
-void  xd11_clear_targetView        (XRTVP targetView, v4f clearColor);
+void  xd11_clear_targetView        (XRTVP targetView, v4 clearColor);
 void  xd11_set_target              (XRTVP view, XDSVP dsView);
 void  xd11_set_targets             (XRTVP *views, XDSVP dsView, u32 count);
 void  xd11_clear_depthStencil_view (XDSVP dsView, u32 flags, UINT8 min, UINT8 max);
@@ -271,19 +270,17 @@ global HCURSOR cursor_horizontal_resize;
 global HCURSOR cursor_palm;
 global HCURSOR cursor_drag;
 
-function rect3f xd11_texarray_put(XD11TextureArray *a, u8 *b, v2i dim) {
-    rect3f uvs = {0};
+static Rect3 xd11_texarray_put(XD11TextureArray *a, u8 *b, v2i dim) {
+    Rect3 uvs = {0};
     
     /* Calculate uvs */
-    uvs = (rect3f){
-        (v3f){0, 0, (f32)a->at},
-        (v3f){dim.x/(f32)a->dim.x, dim.y/(f32)a->dim.y, (f32)a->at}
-    };
+    uvs = rect3_min_max((v3){0, 0, (f32)a->at},
+                        (v3){dim[0]/(f32)a->dim[0], dim[1]/(f32)a->dim[1], (f32)a->at});
     
     /* Update texture */
     D3D11_SUBRESOURCE_DATA updateData = {
         .pSysMem = b,
-        .SysMemPitch = dim.x*4,
+        .SysMemPitch = dim[0]*4,
         .SysMemSlicePitch = 0
             
     };
@@ -291,8 +288,8 @@ function rect3f xd11_texarray_put(XD11TextureArray *a, u8 *b, v2i dim) {
         .left = 0,
         .top = 0,
         .front = 0,
-        .right = dim.x,
-        .bottom = dim.y,
+        .right = dim[0],
+        .bottom = dim[1],
         .back = 1,
     };
     UINT mipLevel = 0;
@@ -589,16 +586,13 @@ ID3D11DeviceContext_Map(xd11.deviceContext,
                         &mapped_sub_resource);
 memcpy(mapped_sub_resource.pData, 
        bytes, 
-       texture->size.x*texture->size.y*4);
+       texture->size[0]*texture->size[1]*4);
 ID3D11DeviceContext_Unmap(xd11.deviceContext, (ID3D11Resource *)texture.handle, 0);
 #endif
 
-v2f xd11_monitor_size(void) {
-    v2f r;
-    
-    r=ini2fs(GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN));
-    
-    return r;
+void xd11_monitor_size(v2 dest) {
+    dest[0] = (f32)GetSystemMetrics(SM_CXSCREEN);
+    dest[1] = (f32)GetSystemMetrics(SM_CYSCREEN);
 }
 
 ID3D11VertexShader *
@@ -671,10 +665,8 @@ xd11_input_layout(ID3DBlob *vs, D3D11_INPUT_ELEMENT_DESC *array, u32 count) {
     return result;
 }
 
-void xd11_clear_rtv(ID3D11RenderTargetView *render_targetView, v4f clearColor) {
-    ID3D11DeviceContext_ClearRenderTargetView(xd11.deviceContext, 
-                                              render_targetView, 
-                                              clearColor.e);
+void xd11_clear_rtv(ID3D11RenderTargetView *render_targetView, v4 clearColor) {
+    ID3D11DeviceContext_ClearRenderTargetView(xd11.deviceContext, render_targetView,  clearColor);
 }
 
 void xd11_clear_dsv(ID3D11DepthStencilView * dsView, u32 flags, UINT8 min, UINT8 max) {
@@ -683,8 +675,8 @@ void xd11_clear_dsv(ID3D11DepthStencilView * dsView, u32 flags, UINT8 min, UINT8
                                               flags, min, max);
 }
 
-void xd11_render_pass(XD11RenderPass *pass, u32 vertex_count, rect2f *scissor,
-                      u32 psResourceCount, ID3D11ShaderResourceView **psResources) {
+void xd11_render_pass(XD11RenderPass *pass, u32 vertex_count, 
+                      Rect2 *scissor, u32 psResourceCount, ID3D11ShaderResourceView **psResources) {
     /* Topology */
     ID3D11DeviceContext_IASetPrimitiveTopology(xd11.deviceContext, pass->topology);
     /* Input Layout */
@@ -722,9 +714,9 @@ void xd11_render_pass(XD11RenderPass *pass, u32 vertex_count, rect2f *scissor,
     D3D11_RECT scissorArray[1];
     
     if (scissor) 
-        scissorArray[0] = (RECT){(LONG)scissor->min.x, (LONG)scissor->min.y, (LONG)scissor->max.x, (LONG)scissor->max.y};
+        scissorArray[0] = (RECT){(LONG)scissor->min[0], (LONG)scissor->min[1], (LONG)scissor->max[0], (LONG)scissor->max[1]};
     else 
-        scissorArray[0] = (RECT){0, 0, (LONG)xd11.bbDim.x, (LONG)xd11.bbDim.y};
+        scissorArray[0] = (RECT){0, 0, (LONG)xd11.bbDim[0], (LONG)xd11.bbDim[1]};
     
     ID3D11DeviceContext_RSSetScissorRects(xd11.deviceContext, 
                                           narray(scissorArray), scissorArray);
@@ -745,15 +737,15 @@ void xd11_swapChain_resize() {
         exit(1);
     }
     
-    v2f bbDim = {
+    v2 bbDim = {
         (f32)(rect.right - rect.left),
         (f32)(rect.bottom - rect.top),
     };
     
-    if (((UINT)bbDim.x != 0 && (UINT)bbDim.y != 0) &&
-        (((UINT)bbDim.x != xd11.bbDim.x) || 
-         ((UINT)bbDim.y != xd11.bbDim.y))) {
-        xd11.bbDim = bbDim;
+    if (((UINT)bbDim[0] != 0 && (UINT)bbDim[1] != 0) &&
+        (((UINT)bbDim[0] != xd11.bbDim[0]) || 
+         ((UINT)bbDim[1] != xd11.bbDim[1]))) {
+        v2_copy(bbDim, xd11.bbDim);
         
         xd11_resized();
     }
@@ -766,9 +758,9 @@ void xd11_initialize(XD11Config config) {
     xd11_log("XD11 Libraries version 0.1 Alpha.");
     
     /* Register a window class */
-    WNDCLASSEXW windowClass = xwin_wndclass(config.wndproc);
+    WNDCLASSEXA windowClass = xwin_wndclass(config.wndproc);
     windowClass.hIcon = config.icon;
-    if (RegisterClassExW(&windowClass) == 0)
+    if (RegisterClassExA(&windowClass) == 0)
         xd11_fatal("Failed to register window class.");
     else
         xd11_log("Registered window class successfully.");
@@ -779,41 +771,35 @@ void xd11_initialize(XD11Config config) {
         WS_OVERLAPPEDWINDOW | WS_VISIBLE : config.wcStyle;
     
     /* Window pos and size */
-    xd11.wndP = (config.wndP.x==0 && config.wndP.y==0) ? 
-        xd11.wndP = (v2f){0,0} : config.wndP;
+    if (config.wndP[0]==0 && config.wndP[1]==0)
+        v2_copy(v2_zero, xd11.wndP);
+    else
+        v2_copy(config.wndP, xd11.wndP);
     
-    xd11.wndDim = (config.wndDim.x==0 && config.wndDim.y==0) ? 
-        xd11.wndDim = (v2f){800,600} : config.wndDim;
+    if ((config.wndDim[0]==0 && config.wndDim[1]==0))
+        v2_copy((v2){800,600}, xd11.wndDim);
+    else
+        v2_copy(config.wndDim, xd11.wndDim);
     
-    xd11.bbDim = xd11.wndDim;
+    v2_copy(xd11.wndDim, xd11.bbDim);
     
     RECT size = 
     { 
-        (u32)xd11.wndP.x, (u32)xd11.wndP.y,
-        (u32)(xd11.wndP.x + xd11.wndDim.x), (u32)(xd11.wndP.y + xd11.wndDim.y)
+        (u32)xd11.wndP[0], (u32)xd11.wndP[1],
+        (u32)(xd11.wndP[0] + xd11.wndDim[0]), (u32)(xd11.wndP[1] + xd11.wndDim[1])
     };
     
     AdjustWindowRect(&size, WS_OVERLAPPEDWINDOW, FALSE);
-    xd11.wndDim = (v2f){(f32)(size.right - size.left), (f32)(size.bottom - size.top)};
+    v2_copy((v2){(f32)(size.right - size.left), (f32)(size.bottom - size.top)}, xd11.wndDim);
     
     /* Window title */
-    xstrcpy(xd11.wndTitle, 256, (config.wndTitle == 0) ? 
-            L"XLib's xd11" : config.wndTitle);
-    
+    xstrcpy(xd11.wndTitle, (config.wndTitle == 0) ? "XLib's xd11" : config.wndTitle);
     
     /* Create the window */
-    xd11.wndHandle = CreateWindowExW(xd11.wcStyleEx,
-                                     L"xwindow_class", 
-                                     xd11.wndTitle,
-                                     xd11.wcStyle,
-                                     (s32)xd11.wndP.x,
-                                     (s32)xd11.wndP.y, 
-                                     (s32)xd11.wndDim.x,
-                                     (s32)xd11.wndDim.y,
-                                     NULL, 
-                                     NULL, 
-                                     GetModuleHandle(0),
-                                     NULL);
+    xd11.wndHandle = CreateWindowExA(xd11.wcStyleEx, "xwindow_class", xd11.wndTitle,
+                                     xd11.wcStyle, (s32)xd11.wndP[0], (s32)xd11.wndP[1], 
+                                     (s32)xd11.wndDim[0], (s32)xd11.wndDim[1],
+                                     NULL, NULL, GetModuleHandle(0), NULL);
     if (xd11.wndHandle == NULL)
         xd11_fatal("Failed to open window.");
     else
@@ -822,7 +808,7 @@ void xd11_initialize(XD11Config config) {
     /* Direct3D 11 backbuffer size, refresh rate, scale, swap chain, feature levels...  */
     DXGI_MODE_DESC mode_desc = 
     {
-        (s32)xd11.bbDim.x, (s32)xd11.bbDim.y,
+        (s32)xd11.bbDim[0], (s32)xd11.bbDim[1],
         (DXGI_RATIONAL){60,1},
         DXGI_FORMAT_R8G8B8A8_UNORM,
         DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
@@ -871,7 +857,7 @@ void xd11_initialize(XD11Config config) {
         snprintf(buf, 512, "Erro numero: %d", hr);
         
         // Convert the HRESULT to a human-readable error message
-        // using the FormatMessage function
+        // using the FormatMessage static
         TCHAR errorMsg[512];
         DWORD errorMsgLength = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                                              NULL, hr, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
@@ -900,22 +886,21 @@ void xd11_initialize(XD11Config config) {
     QueryPerformanceCounter(&lastCounter);
     
     /* Load cursors */
-    wchar_t cursorFullPath[260];
-    xwin_path_abs(cursorFullPath, 260, L"cursors\\normal_select.cur");
-    cursor_select = LoadCursorFromFileW(cursorFullPath);
+    char cursorFullPath[260];
+    xwin_path_abs(cursorFullPath, 260, "cursors\\cur1156.ani");
+    cursor_select = LoadCursorFromFileA(cursorFullPath);
     
-    xwin_path_abs(cursorFullPath, 260, L"cursors\\link_select.cur");
-    cursor_link = LoadCursorFromFileW(cursorFullPath);
+    xwin_path_abs(cursorFullPath, 260, "cursors\\link_select.cur");
+    cursor_link = LoadCursorFromFileA(cursorFullPath);
     
-    xwin_path_abs(cursorFullPath, 260, L"cursors\\horizontal_resize.cur");
-    cursor_horizontal_resize = LoadCursorFromFileW(cursorFullPath);
+    xwin_path_abs(cursorFullPath, 260, "cursors\\horizontal_resize.cur");
+    cursor_horizontal_resize = LoadCursorFromFileA(cursorFullPath);
     
-    xwin_path_abs(cursorFullPath, 260, L"cursors\\palm.cur");
-    cursor_palm = LoadCursorFromFileW(cursorFullPath);
+    xwin_path_abs(cursorFullPath, 260, "cursors\\palm.cur");
+    cursor_palm = LoadCursorFromFileA(cursorFullPath);
     
-    xwin_path_abs(cursorFullPath, 260, L"cursors\\drag.cur");
-    cursor_drag = LoadCursorFromFileW(cursorFullPath);
-    
+    xwin_path_abs(cursorFullPath, 260, "cursors\\drag.cur");
+    cursor_drag = LoadCursorFromFileA(cursorFullPath);
     
     xd11.running = true;
 }

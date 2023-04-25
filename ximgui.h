@@ -3,13 +3,13 @@
 
 /* USAGE: 
 
-;  v2f buttonP = app.dialogBoxP;
-        ;  buttonP.x += 5;
-        ;  buttonP.y += 5;
+;  v2 buttonP = app.dialogBoxP;
+        ;  buttonP[0] += 5;
+        ;  buttonP[1] += 5;
         ;  {
-            ;    wchar_t *label = L"Editar";
-            ;    v2f labelDim = xrender2d_font_dim(win32.fontSansSerif[0], label);
-            ;    v2f buttonDim = {dialogBoxDim.x-10, labelDim.y+10};
+            ;    char *label = L"Editar";
+            ;    v2 labelDim = xrender2d_font_dim(win32.fontSansSerif[0], label);
+            ;    v2 buttonDim = {dialogBoxDim[0]-10, labelDim[1]+10};
             ;
              ;    if (imgui_button(&win32.layers[Layer_ui1], win32.fontSansSerif[1],
                              ;        buttonP, buttonDim, xcolor[Azure], xcolor[White], label,
@@ -17,7 +17,7 @@
                 ;        app.state = AppStateMachine_edit_note;
               ;    }
             ;
-            ;    padd2f(&buttonP, (v2f){0,buttonDim.y+5});
+            ;    padd2f(&buttonP, (v2){0,buttonDim[1]+5});
         ;  }
         */
 
@@ -28,9 +28,9 @@ typedef enum {
 } XImguiType;
 
 typedef struct {
-    wchar_t storage[512];
+    char storage[512];
     u32 index;
-    void (* enter)(wchar_t *, u32);
+    void (* enter)(char *, u32);
     void *tabId;
     XImguiType tabType;
 } XImguiInputState;
@@ -44,15 +44,15 @@ typedef struct {
 global XImguiContext ximgui;
 
 static bool ximgui_input      (XRenderBatch *batch, XFont *font, 
-                               v2f p, v2f dim, v4f bgColor, v4f fgColor, v4f labelColor, wchar_t *label, bool code,
+                               v2 p, v2 dim, v4 bgColor, v4 fgColor, v4 labelColor, char *label, bool code,
                                void *id);
 
 static bool ximgui_button     (XRenderBatch *batch, XFont *font,
-                               v2f p, v2f dim, v4f bgColor, v4f fgColor, wchar_t *label,
+                               v2 p, v2 dim, v4 bgColor, v4 fgColor, char *label,
                                void *id);
 
 static void ximgui_vscrollbar (XRenderBatch *contentBatch, XRenderBatch *uiBatch,
-                               v2f panelP, v2f panelDim, f32 contentH, 
+                               v2 panelP, v2 panelDim, f32 contentH, 
                                f32 *point, f32 *pointVel, f32 scrollVel, f32 scrollDrag);
 
 static void
@@ -103,15 +103,15 @@ ximgui_update(XRenderBatch *batch, XFont *font) {
     
 #if 0
     /* Debug print */
-    wchar_t buf[512];
+    char buf[512];
     swprintf_s(buf, 512, L"Hot: %p Active: %p", imgui.hot, imgui.active);
     
-    draw_text(batch, (v2f){0, xd11.back_buffer_size.y-30},
+    draw_text(batch, (v2){0, xd11.back_buffer_size[1]-30},
               azu4f, font, buf);
 #endif
     
     /* Reset active if mouse pressed with no hot */
-    if (!ximgui.hot && xwin.mouse.left.pressed)
+    if (!ximgui.hot && xmouse.left.pressed)
         ximgui.active = 0;
     
     if (xwin.lastCursorSet) {
@@ -131,7 +131,7 @@ ximgui_update(XRenderBatch *batch, XFont *font) {
 
 static bool
 ximgui_button(XRenderBatch *batch, XFont *font,
-              v2f p, v2f dim, v4f bgColor, v4f fgColor, wchar_t *label,
+              v2 p, v2 dim, v4 bgColor, v4 fgColor, char *label,
               void *id) {
     bool clicked = false;
     
@@ -139,7 +139,7 @@ ximgui_button(XRenderBatch *batch, XFont *font,
     /* Handle input */
     
     /* If mouse is inside box */
-    if (point_vs_rect2(xwin.mouse.pos, rect2_min_dim(p, dim))) {
+    if (point_vs_rect2(xmouse.p, rect2_min_dim(p, dim))) {
         /* Set as hot */
         ximgui.hot = id;
         
@@ -147,7 +147,7 @@ ximgui_button(XRenderBatch *batch, XFont *font,
     }
     
     /* If hot and mouse pressed */
-    if (ximgui.hot == id && xwin.mouse.left.pressed) {
+    if (ximgui.hot == id && xmouse.left.pressed) {
         /* Set as active */
         ximgui.active = id;
         ximgui.activeType = XImguiType_button;
@@ -160,20 +160,24 @@ ximgui_button(XRenderBatch *batch, XFont *font,
         bgColor = xcolor[Azure];
     
     /* Get the dimensions of the text */
-    v2f textDim = xrender2d_font_dim(font, label);
+    v2 textDim;
+    xrender2d_font_dim(font, label, textDim);
     
     /* Expand the asked dimensions if it is smaller than necessary */
     f32 horizontalPadding = 20;
-    if (dim.y < textDim.y)
-        dim.y = textDim.y;
-    if (dim.x < textDim.x)
-        dim.x = textDim.x + horizontalPadding;
+    if (dim[1] < textDim[1])
+        dim[1] = textDim[1];
+    if (dim[0] < textDim[0])
+        dim[0] = textDim[0] + horizontalPadding;
     
     /* Draw the box */
     draw_rect_rounded(batch, p, dim, bgColor, 5);
     
     /* Centralize text */
-    padd2f(&p, mul2f(.5f, sub2f(dim, textDim)));
+    v2 dimMinusTextDim, half;
+    v2_sub(dim, textDim, dimMinusTextDim);
+    v2_mul(.5f, dimMinusTextDim, half);
+    v2_add(p, half, p);
     
     /* Draw the label */
     draw_text(batch, p, fgColor, font, label);
@@ -183,37 +187,40 @@ ximgui_button(XRenderBatch *batch, XFont *font,
 
 static bool
 ximgui_input(XRenderBatch *batch, XFont *font, 
-             v2f p, v2f dim, v4f bgColor, v4f fgColor, v4f labelColor, wchar_t *label, bool code,
+             v2 p, v2 dim, v4 bgColor, v4 fgColor, v4 labelColor, char *label, bool code,
              void *id) {
-    v2f boxP = p;
+    v2 boxP;
+    v2_copy(p, boxP);
     
     if (label) {
         /* Get the with of the label */
-        v2f labelDim = xrender2d_font_dim(font, label);
-        boxP.x += labelDim.x;
+        v2 labelDim;
+        xrender2d_font_dim(font, label, labelDim);
+        boxP[0] += labelDim[0];
     }
     
     /* Handle input */
     
     /* If mouse is inside box */
-    if (point_vs_rect2(xwin.mouse.pos, rect2_min_dim(boxP, dim))) {
+    if (point_vs_rect2(xmouse.p, rect2_min_dim(boxP, dim))) {
         /* Set as hot */
         ximgui.hot = id;
     }
     
     /* If hot and mouse pressed */
-    if (ximgui.hot == id && xwin.mouse.left.pressed) {
+    if (ximgui.hot == id && xmouse.left.pressed) {
         /* Set as active */
         ximgui.active = id;
         ximgui.activeType = XImguiType_input;
     }
     
     /* Render */
-    v4f boxColor = bgColor;
+    v4 boxColor;
+    v4_copy(bgColor, boxColor);
     if (ximgui.active == id)
-        boxColor = xcolor[Gold];
+        v4_copy(xcolor[Gold], boxColor);
     else if (ximgui.hot == id)
-        boxColor = xcolor[Azure];
+        v4_copy(xcolor[Azure], boxColor);
     
     if (label) {
         /* Draw the label */
@@ -226,42 +233,43 @@ ximgui_input(XRenderBatch *batch, XFont *font,
     XImguiInputState *state = id;
     
     /* Draw the data */
-    v2f textP = add2f(boxP, (v2f){4,0});
+    v2 textP;
+    v2_add(boxP, (v2){4,0}, textP);
     if (code) {
-        wchar_t *at = state->storage;
+        char *at = state->storage;
         
         f32 starRadius = .5f*font->charAvgWidth;
         
-        v2f starP = textP;
-        starP.x += starRadius;
-        starP.y += starRadius + .5f*(dim.y-2*starRadius);
+        v2 starP;
+        v2_copy(textP, starP);
+        starP[0] += starRadius;
+        starP[1] += starRadius + .5f*(dim[1]-2*starRadius);
         
         while (*at++) {
             /* Draw star */
-            draw_circle(batch, starP, (v4f){0,0,0,1}, starRadius);
+            draw_circle(batch, starP, (v4){0,0,0,1}, starRadius);
             
             /* Advance x */
-            starP.x += (2*starRadius);
+            starP[0] += (2*starRadius);
         }
     }
     else
         draw_text(batch, textP, fgColor, font, state->storage);
     
-    v2f cursorDim = (v2f){8,24};
+    v2 cursorDim = {8,24};
     
     if (state == ximgui.active) {
         
         /* Draw typing cursor */
-        v2f textDim = xrender2d_font_dim(font, state->storage);
+        v2 textDim;
+        xrender2d_font_dim(font, state->storage, textDim);
         
         /* Calculate top margin to centralize vertically */
-        f32 marginTop = 0.5f*(dim.y-cursorDim.y);
+        f32 marginTop = 0.5f*(dim[1]-cursorDim[1]);
         
-        draw_rect_rounded(batch,
-                          add2f(boxP, (v2f){textDim.x, marginTop}),
-                          cursorDim,
-                          (v4f){0.5f,0.5f,0.5f,1},
-                          4);
+        v2 boxPPlusTextDimX;
+        v2_add(boxP, (v2){textDim[0], marginTop}, boxPPlusTextDimX);
+        draw_rect_rounded(batch, boxPPlusTextDimX, cursorDim, (v4){0.5f,0.5f,0.5f,1}, 4);
     }
     
     return false;
@@ -269,11 +277,11 @@ ximgui_input(XRenderBatch *batch, XFont *font,
 
 static void
 ximgui_vscrollbar(XRenderBatch *contentBatch, XRenderBatch *uiBatch, 
-                  v2f panelP, v2f panelDim, f32 contentH, 
+                  v2 panelP, v2 panelDim, f32 contentH, 
                   f32 *point, f32 *pointVel, f32 scrollVel, f32 scrollDrag) {
-    if (point_vs_rect2(xwin.mouse.pos, rect2_min_dim(panelP, panelDim))) {
-        if (xwin.mouse.wheel && contentH > panelDim.y) 
-            *pointVel -= scrollVel *xwin.mouse.wheel;
+    if (point_vs_rect2(xmouse.p, rect2_min_dim(panelP, panelDim))) {
+        if (xmouse.wheel && contentH > panelDim[1]) 
+            *pointVel -= scrollVel *xmouse.wheel;
     }
     
     *point += xd11.dt * *pointVel;
@@ -284,18 +292,20 @@ ximgui_vscrollbar(XRenderBatch *contentBatch, XRenderBatch *uiBatch,
     *point = max(*point, 0);
     
     /* Draw thumb */
-    v4f thumbColor = xcolor[Black];
-    thumbColor.a = 0.5f;
-    if (contentH > panelDim.y) {
-        f32 diffPerc = (contentH-panelDim.y) / contentH;
-        f32 thumbH = panelDim.y - panelDim.y*diffPerc;
-        v2f thumbP = add2f(panelP,
-                           (v2f) {
-                               panelDim.x - 7, 
-                               *point * diffPerc * panelDim.y
-                           });
+    v4 thumbColor;
+    v4_copy(xcolor[Black], thumbColor);
+    thumbColor[3] = 0.5f;
+    if (contentH > panelDim[1]) {
+        f32 diffPerc = (contentH-panelDim[1]) / contentH;
+        f32 thumbH = panelDim[1] - panelDim[1]*diffPerc;
+        v2 thumbP;
+        v2_add(panelP,
+               (v2) {
+                   panelDim[0] - 7, 
+                   *point * diffPerc * panelDim[1]
+               }, thumbP);
         
-        v2f thumbDim = (v2f){5, thumbH};
+        v2 thumbDim = {5, thumbH};
         draw_rect(uiBatch, thumbP, thumbDim, thumbColor);
     }
     else {

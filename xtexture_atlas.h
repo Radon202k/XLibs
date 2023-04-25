@@ -3,7 +3,7 @@
 
 typedef struct {
     v2i at;
-    rect3f uvs;
+    Rect3 uvs;
 } XTextureAtlasCoords;
 
 typedef struct {
@@ -15,8 +15,8 @@ typedef struct {
     s32 uvZ;
 } XTextureAtlas;
 
-function void                xtexture_atlas_init (XTextureAtlas *a, v2i dim, s32 uvZ);
-function XTextureAtlasCoords xtexture_atlas_put  (XTextureAtlas *a, v2i dim);
+static void                xtexture_atlas_init (XTextureAtlas *a, v2i dim, s32 uvZ);
+static XTextureAtlasCoords xtexture_atlas_put  (XTextureAtlas *a, v2i dim);
 
 /* End of interface
 
@@ -43,40 +43,48 @@ Implementation interface */
 
 */
 
-function void xtexture_atlas_init(XTextureAtlas *a, v2i dim, s32 uvZ) {
+static void xtexture_atlas_init(XTextureAtlas *a, v2i dim, s32 uvZ) {
     // Initialize other fields of XTextureAtlas, such as texture, bytes, bottom, and at
-    a->dim = dim;
+    v2i_copy(dim, a->dim);
     a->uvZ = uvZ;
 }
 
-function XTextureAtlasCoords xtexture_atlas_put(XTextureAtlas *a, v2i dim) {
+static XTextureAtlasCoords 
+xtexture_atlas_put(XTextureAtlas *a, v2i dim) {
     XTextureAtlasCoords result = {0};
     
     /* If the rect wont fit in the row */
-    if (a->at.x + dim.x > a->dim.x) { 
-        a->at.y = a->nextTop;
-        a->at.x = 0;
+    if (a->at[0] + dim[0] > a->dim[0]) { 
+        a->at[1] = a->nextTop;
+        a->at[0] = 0;
     }
     /* If it wont fit at all */
-    if (a->at.y + dim.y > a->dim.y) {
+    if (a->at[1] + dim[1] > a->dim[1]) {
         // TODO: Handle
         assert(!"Next image wont fit in the atlas!");
     }
     
     /* Advance next top if this image is taller than current next top allows for */
-    if (a->at.y + dim.y > a->nextTop) 
-        a->nextTop = a->at.y + dim.y;
+    if (a->at[1] + dim[1] > a->nextTop) 
+        a->nextTop = a->at[1] + dim[1];
     
     /* Calculate uvs */
-    result.uvs = (rect3f){
-        (v3f){a->at.x/(f32)a->dim.x, a->at.y/(f32)a->dim.y, (f32)a->uvZ},
-        (v3f){(a->at.x+dim.x)/(f32)a->dim.x, (a->at.y+dim.y)/(f32)a->dim.y, (f32)a->uvZ}
+    v3 min = {
+        (f32)a->at[0]/(f32)a->dim[0], 
+        (f32)a->at[1]/(f32)a->dim[1], 
+        (f32)a->uvZ
     };
+    v3 max = {
+        (a->at[0]+dim[0])/(f32)a->dim[0], 
+        (a->at[1]+dim[1])/(f32)a->dim[1], 
+        (f32)a->uvZ
+    };
+    result.uvs = rect3_min_max(min, max);
     
-    result.at = a->at;
+    v2i_copy(a->at, result.at);
     
-    /* Advance at.x */
-    a->at.x += dim.x;
+    /* Advance at[0] */
+    a->at[0] += dim[0];
     
     return result;
 }
