@@ -9,6 +9,7 @@
 #include "XLibs/xbase.h"
 #include "XLibs/xmemory.h"
 #include "XLibs/xmath.h"
+#include "XLibs/xstring.h"
 /* 3D utilities / X11 & Opengl initialization */
 #include "XLibs/x3d.h"
 #include "XLibs/xopengl_loader.h"

@@ -11,6 +11,7 @@ typedef enum XGLDrawType {
 typedef enum XGLPassType {
     XGLPassType_null,
     XGLPassType_mesh,
+    XGLPassType_quad,
     XGLPassType_font,
 } XGLPassType;
 
@@ -32,31 +33,55 @@ typedef struct XGLCommandQuad {
     v4 color;
 } XGLCommandQuad;
 
-struct XFont;
+typedef struct XGLQuadVertex {
+    v2 position;
+    v2 texCoord;
+    v4 color;
+} XGLQuadVertex;
+
+typedef struct XFont {
+    s32 w, h;
+    stbtt_bakedchar cdata[96]; // ASCII 32..126 is 95 glyphs
+    GLuint ftex;
+    f32 ascent;
+    f32 descent;
+    f32 lineGap;
+} XGLFont;
+
 typedef struct XGLPass {
     XGLPassType type;
     XGLDrawType drawType;
     Camera *camera;
     XGLShader *shader;
     GLuint vao;
-    /* Font pass */
+    /* Quad/Font pass */
     struct XFont *font;
-    GLuint fontPassVbo;
-    GLuint fontPassEbo;
-    XGLCommandMesh meshCommands[4096];
-    u32 meshCommandIndex;
+    GLuint quadVbo;
+    GLuint quadEbo;
+    GLuint quadTex;
     XGLCommandQuad quadCommands[4096];
     u32 quadCommandIndex;
+    /* Mesh pass */
+    XGLCommandMesh meshCommands[4096];
+    u32 meshCommandIndex;
 } XGLPass;
 
 static void   xgl_construct          (void);
 static GLuint xgl_texture_from_png   (char *path);
 static void   xgl_shader_from_files  (XGLShader *shader, char *vsPath, char *fsPath);
-static void   xgl_push_mesh          (XGLPass *pass, v3 p, v3 s, versor r, u32 texture, Mesh *m);
-
 static void   xgl_render_frame       (XGLPass passes[32], u32 passIndex);
 
+/* Internal drawing functions */
+static void   xgl_push_mesh          (XGLPass *pass, v3 p, v3 s, versor r, u32 texture, Mesh *m);
+static void   xgl_push_quad          (XGLPass *pass, 
+                                      v2  pA, v2  pB, v2  pC, v2  pD,
+                                      v2 uvA, v2 uvB, v2 uvC, v2 uvD,
+                                      v4 color);
+static void   xgl_push_text          (XGLPass *pass, v2 p, f32 scale, v4 color, char *text);
 
+
+static void   draw_text (XGLPass *pass, v2 p, f32 scale, v4 color, char *text);
+static void   draw_rect (XGLPass *pass, v2 p, v2 dim, v4 color);
 
 
 
@@ -135,6 +160,22 @@ xgl_upload_mesh(Mesh *mesh, XGLPass *pass) {
 }
 
 static GLuint
+xgl_texture_from_bytes(u32 width, u32 height, u8 *bytes) {
+    GLuint result = -1;
+    glCreateTextures(GL_TEXTURE_2D, 1, &result);
+    /* Set up filtering */
+    glTextureParameteri(result, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTextureParameteri(result, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTextureParameteri(result, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTextureParameteri(result, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    /* Allocate/upload data to gpu */
+    glTextureStorage2D (result, 1, GL_RGBA8, width, height);
+    glTextureSubImage2D(result, 0, 0, 0, width, height, 
+                        GL_RGBA, GL_UNSIGNED_BYTE, bytes);
+    return result;
+}
+
+static GLuint
 xgl_texture_from_png(char *path) {
     int width, height, channels;
     unsigned char* imageData = stbi_load(path, &width, &height, &channels, STBI_rgb_alpha);
@@ -144,16 +185,7 @@ xgl_texture_from_png(char *path) {
         exit(1);
     }
     
-    GLuint result = -1;
-    glCreateTextures(GL_TEXTURE_2D, 1, &result);
-    
-    glTextureParameteri(result, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTextureParameteri(result, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTextureParameteri(result, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTextureParameteri(result, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    
-    glTextureStorage2D (result, 1, GL_RGBA8, width, height);
-    glTextureSubImage2D(result, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+    GLuint result = xgl_texture_from_bytes(width, height, imageData) ;
     
     // Free the image data
     stbi_image_free(imageData);
@@ -279,7 +311,8 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
                 pass->meshCommandIndex = 0;
             }
         }
-        else if (pass->type == XGLPassType_font) {
+        else if (pass->type == XGLPassType_font ||
+                 pass->type == XGLPassType_quad) {
             // Matrix
             mat4 orthoRH;
             mat4_ortho_rh(0, x11.width, x11.height, 0,
@@ -288,11 +321,14 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
             glProgramUniformMatrix4fv(pass->shader->vshader, 0, 1, GL_FALSE, (f32 *)orthoRH);
             
             // Bind texture
-            glBindTextureUnit(0, pass->font->ftex);
+            if (pass->type == XGLPassType_quad)
+                glBindTextureUnit(0, pass->quadTex);
+            else
+                glBindTextureUnit(0, pass->font->ftex);
             
             if (pass->drawType == XGLDrawType_indexed) {
                 
-                XFontVertex vertices[4096] = {0};
+                XGLQuadVertex vertices[4096] = {0};
                 u32 vertexIndex = 0;
                 
                 GLuint indices[4096] = {0};
@@ -333,11 +369,11 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
                 }
                 
                 // Bind the buffers
-                glBindBuffer(GL_ARRAY_BUFFER, pass->fontPassVbo);
-                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pass->fontPassEbo);
+                glBindBuffer(GL_ARRAY_BUFFER, pass->quadVbo);
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, pass->quadEbo);
                 
                 // Update the VBO data
-                glBufferSubData(GL_ARRAY_BUFFER, 0, vertexIndex*sizeof(XFontVertex), vertices);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, vertexIndex*sizeof(XGLQuadVertex), vertices);
                 // Update the EBO data
                 glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, indexIndex*sizeof(GLuint), indices);
                 
@@ -348,16 +384,16 @@ xgl_render_frame(XGLPass passes[32], u32 passCount) {
                 glBindBuffer(GL_ARRAY_BUFFER, 0);
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
                 
-                /* Reset the count of how many meshes to draw per frame */
+                /* Reset the count of how many quads to draw per frame */
                 pass->quadCommandIndex = 0;
             }
         }
     }
 }
 
-static XFont *
+static XGLFont *
 xgl_font(char *path, f32 height) {
-    XFont *result = xalloc(sizeof *result);
+    XGLFont *result = xalloc(sizeof *result);
     u32 w = 2048;
     u32 h = 2048;
     result->w = w;
@@ -368,6 +404,13 @@ xgl_font(char *path, f32 height) {
     XFile font = xfile_read(path);
     if (!font.exists)
         assert(!"Could not open font");
+    
+    stbtt_GetScaledFontVMetrics(font.bytes, 0, height, 
+                                &result->ascent, &result->descent, &result->lineGap);
+    
+    // int line_height = (int)ceil((ascent - descent + line_gap) * scale);
+    
+    
     /* Bake glyph bitmaps */
     stbtt_BakeFontBitmap(font.bytes,0, height, tempBitmap,w,h, 32,96, result->cdata); // no guarantee this fits!
     /* Alloc full RGBA bytes to make things easier */ 
@@ -402,24 +445,48 @@ xgl_font(char *path, f32 height) {
 }
 
 static void 
-draw_text(XGLPass *pass, v2 p, f32 scale, v4 color, char *text) {
-    f32 x = p[0];
-    f32 y = p[1];
+xgl_push_text(XGLPass *pass, v2 p, f32 scale, v4 color, char *text) {
+    f32 x = 0;
+    f32 y = 0;
+    f32 h = (f32)pass->font->ascent;
+    //f32 h = 0;
     while (*text) {
         stbtt_aligned_quad q;
         stbtt_GetBakedQuad(pass->font->cdata, pass->font->w,pass->font->h, *text-32, &x,&y,&q,1);//1=opengl & d3d10+,0=d3d9
         
         xgl_push_quad(pass,
-                      (v2){scale*q.x0,scale*q.y0}, 
-                      (v2){scale*q.x1,scale*q.y0}, 
-                      (v2){scale*q.x1,scale*q.y1}, 
-                      (v2){scale*q.x0,scale*q.y1},
+                      (v2){p[0]+scale*q.x0, p[1]+scale*(h+q.y0)}, 
+                      (v2){p[0]+scale*q.x1, p[1]+scale*(h+q.y0)}, 
+                      (v2){p[0]+scale*q.x1, p[1]+scale*(h+q.y1)}, 
+                      (v2){p[0]+scale*q.x0, p[1]+scale*(h+q.y1)},
                       (v2){q.s0,q.t0}, (v2){q.s1,q.t0}, (v2){q.s1,q.t1}, (v2){q.s0,q.t1},
                       color);
         ++text;
     }
 }
 
+static void
+draw_text(XGLPass *pass, v2 p, f32 scale, v4 color, char *text) {
+    xgl_push_text(pass, p, scale, color, text);
+}
+
+static void
+draw_rect(XGLPass *pass, v2 p, v2 dim, v4 color) {
+    v2 pA = {p[0], p[1]};
+    v2 pB = {p[0] + dim[0], p[1]};
+    v2 pC = {p[0] + dim[0], p[1] + dim[1]};
+    v2 pD = {p[0], p[1] + dim[1]};
+    
+    v2 uvA = {0, 0};
+    v2 uvB = {1, 0};
+    v2 uvC = {1, 1};
+    v2 uvD = {0, 1};
+    
+    xgl_push_quad(pass,
+                  pA, pB, pC, pD,
+                  uvA, uvB, uvC, uvD,
+                  color);
+}
 
 
 

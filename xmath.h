@@ -5,8 +5,6 @@
 #define PI2f 1.57079632679489661923132169163975144   /* pi/2        */
 #define PI4f 0.785398163397448309615660845819875721  /* pi/4        */
 
-#define max(a, b) (((a)>(b))?(a):(b))
-
 /* =========================================================================
    DATA TYPES
    ========================================================================= */
@@ -82,6 +80,10 @@ f32  v2_dot       (v2 a, v2 b);
 f32  v2_length2   (v2 a);
 f32  v2_length    (v2 a);
 
+static v2 v2_zero = {0,0};
+static v2 v2_one  = {1,1};
+static v2 v2_half = {.5f,.5f};
+
 /* =========================================================================
    VECTOR 2 INT
    ========================================================================= */
@@ -113,6 +115,10 @@ f32  v3_dot       (v3 a, v3 b);
 f32  v3_length2   (v3 a);
 f32  v3_length    (v3 a);
 
+static v3 v3_zero = {0,0,0};
+static v3 v3_one  = {1,1,1};
+static v3 v3_half = {.5f,.5f,.5f};
+
 /* =========================================================================
    VECTOR 3 INT
    ========================================================================= */
@@ -143,6 +149,10 @@ void v4_normalize (v4 a);
 f32  v4_dot       (v4 a, v4 b);
 f32  v4_length2   (v4 a);
 f32  v4_length    (v4 a);
+
+static v4 v4_zero = {0,0,0,0};
+static v4 v4_one  = {1,1,1,1};
+static v4 v4_half = {.5f,.5f,.5f,.5f};
 
 /* =========================================================================
    VECTOR 4 INT
@@ -227,6 +237,7 @@ v4 xcolor[] = {
    RECT 2 FLOAT
    ========================================================================= */
 
+Rect2 rect2_min_max    (v2 min, v2 max);
 Rect2 rect2_min_dim    (v2 min, v2 dim);
 Rect2 rect2_center_dim (v2 center, v2 dim);
 void  rect2_dim        (Rect2 rect, v2 dest);
@@ -653,6 +664,11 @@ rect2_min_dim(v2 min, v2 dim) {
 }
 
 inline void
+rect2_p(Rect2 rect, v2 dest) {
+    v2_copy(rect.min, dest);
+}
+
+inline void
 rect2_dim(Rect2 rect, v2 dest) {
     v2_sub(rect.max, rect.min, dest);
 }
@@ -1066,7 +1082,7 @@ circle_vs_circle_dist(Circle A, Circle B)
     v2 aMinusB;
     v2_sub(A.center, B.center, aMinusB);
     f32 dist = v2_length(aMinusB);
-    return max(A.radius + B.radius - dist, 0);
+    return fmax(A.radius + B.radius - dist, 0);
 }
 
 void

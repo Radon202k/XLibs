@@ -43,19 +43,19 @@ typedef struct {
 
 global XImguiContext ximgui;
 
-function bool ximgui_input      (XRenderBatch *batch, XFont *font, 
-                                 v2f p, v2f dim, v4f bgColor, v4f fgColor, v4f labelColor, wchar_t *label, bool code,
-                                 void *id);
+static bool ximgui_input      (XRenderBatch *batch, XFont *font, 
+                               v2f p, v2f dim, v4f bgColor, v4f fgColor, v4f labelColor, wchar_t *label, bool code,
+                               void *id);
 
-function bool ximgui_button     (XRenderBatch *batch, XFont *font,
-                                 v2f p, v2f dim, v4f bgColor, v4f fgColor, wchar_t *label,
-                                 void *id);
+static bool ximgui_button     (XRenderBatch *batch, XFont *font,
+                               v2f p, v2f dim, v4f bgColor, v4f fgColor, wchar_t *label,
+                               void *id);
 
-function void ximgui_vscrollbar (XRenderBatch *contentBatch, XRenderBatch *uiBatch,
-                                 v2f panelP, v2f panelDim, f32 contentH, 
-                                 f32 *point, f32 *pointVel, f32 scrollVel, f32 scrollDrag);
+static void ximgui_vscrollbar (XRenderBatch *contentBatch, XRenderBatch *uiBatch,
+                               v2f panelP, v2f panelDim, f32 contentH, 
+                               f32 *point, f32 *pointVel, f32 scrollVel, f32 scrollDrag);
 
-function void
+static void
 ximgui_update(XRenderBatch *batch, XFont *font) {
     if (ximgui.active) {
         switch (ximgui.activeType) {
@@ -129,7 +129,7 @@ ximgui_update(XRenderBatch *batch, XFont *font) {
 }
 
 
-function bool
+static bool
 ximgui_button(XRenderBatch *batch, XFont *font,
               v2f p, v2f dim, v4f bgColor, v4f fgColor, wchar_t *label,
               void *id) {
@@ -181,7 +181,7 @@ ximgui_button(XRenderBatch *batch, XFont *font,
     return clicked;
 }
 
-function bool
+static bool
 ximgui_input(XRenderBatch *batch, XFont *font, 
              v2f p, v2f dim, v4f bgColor, v4f fgColor, v4f labelColor, wchar_t *label, bool code,
              void *id) {
@@ -267,7 +267,7 @@ ximgui_input(XRenderBatch *batch, XFont *font,
     return false;
 }
 
-function void
+static void
 ximgui_vscrollbar(XRenderBatch *contentBatch, XRenderBatch *uiBatch, 
                   v2f panelP, v2f panelDim, f32 contentH, 
                   f32 *point, f32 *pointVel, f32 scrollVel, f32 scrollDrag) {

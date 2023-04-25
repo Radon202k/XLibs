@@ -9,18 +9,18 @@ typedef struct {
 
 global XAudio xaudio;
 
-function void
+static void
 xaudio_shutdown(void) {
     ma_engine_uninit(&xaudio.engine);
 }
 
-function void
+static void
 xaudio_free_sound(XSound sound) {
     ma_sound_uninit(sound);
     xfree(sound);
 }
 
-function XSound
+static XSound
 xaudio_load_mp3(char *path) {
     ma_result error;
     
@@ -37,7 +37,7 @@ xaudio_load_mp3(char *path) {
     return result;
 }
 
-function bool
+static bool
 xaudio_initialize(void) {
     ma_result result;
     
@@ -49,7 +49,7 @@ xaudio_initialize(void) {
     return true;
 }
 
-function void
+static void
 xaudio_play(XSound sound) {
     ma_sound_start(sound);
 }

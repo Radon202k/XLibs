@@ -4,22 +4,17 @@
 #include <X11/Xlib.h>
 #include <unistd.h>
 
+typedef struct XButton {
+    bool pressed;
+    bool released;
+    bool down;
+} XButton;
+
 typedef struct XMouse {
-    f32 x;
-    f32 y;
+    XButton left;
+    XButton right;
+    v2 p;
 } XMouse;
-
-typedef struct XFont {
-    s32 w, h;
-    stbtt_bakedchar cdata[96]; // ASCII 32..126 is 95 glyphs
-    GLuint ftex;
-} XFont;
-
-typedef struct FontVertex {
-    v2 position;
-    v2 texCoord;
-    v4 color;
-} XFontVertex;
 
 typedef struct X11 {
     bool isRunning;
@@ -76,22 +71,6 @@ global XMouse xmouse;
 
 
 
-bool isLeftButtonDown() {
-    Window root, child;
-    int rootX, rootY, winX, winY;
-    unsigned int mask;
-    XQueryPointer(x11.dpy, x11.window, &root, &child, &rootX, &rootY, &winX, &winY, &mask);
-    return (mask & Button1Mask);
-}
-
-// Check if the right mouse button is down
-bool isRightButtonDown() {
-    Window root, child;
-    int rootX, rootY, winX, winY;
-    unsigned int mask;
-    XQueryPointer(x11.dpy, x11.window, &root, &child, &rootX, &rootY, &winX, &winY, &mask);
-    return (mask & Button3Mask);
-}
 
 #define XK_Shift_L 0xffe1
 
@@ -266,6 +245,28 @@ x11_update(void) {
         }
     }
     
+    // Update mouse buttons state
+    {
+        Window root, child;
+        int rootX, rootY, winX, winY;
+        unsigned int mask;
+        XQueryPointer(x11.dpy, x11.window, &root, &child, &rootX, &rootY, &winX, &winY, &mask);
+        
+        bool leftDown = (mask & Button1Mask);
+        if (xmouse.left.down && !leftDown)
+            xmouse.left.released = true;
+        if (xmouse.left.down == false && leftDown)
+            xmouse.left.pressed = true;
+        xmouse.left.down = leftDown;
+        
+        bool rightDown = (mask & Button3Mask);
+        if (xmouse.right.down && !rightDown)
+            xmouse.right.released = true;
+        if (xmouse.right.down == false && rightDown)
+            xmouse.right.pressed = true;
+        xmouse.right.down = rightDown;
+    }
+    
     // get current window size
     XWindowAttributes attr;
     Status status = XGetWindowAttributes(x11.dpy, x11.window, &attr);
@@ -287,8 +288,7 @@ x11_update(void) {
     unsigned int mask;
     
     XQueryPointer(x11.dpy, x11.window, &root_window, &child_window, &root_x, &root_y, &win_x, &win_y, &mask);
-    xmouse.x = win_x;
-    xmouse.y = win_y;
+    v2_copy((v2){win_x, win_y}, xmouse.p);
     
     return dt;
 }
@@ -296,6 +296,12 @@ x11_update(void) {
 static void x11_swap_buffers(void) {
     if (!eglSwapBuffers(x11.display, x11.surface)) 
         FatalError("Failed to swap OpenGL buffers!");
+    
+    /* Reset Mouse buttons state */
+    xmouse.left.pressed = false;
+    xmouse.left.released = false;
+    xmouse.right.pressed = false;
+    xmouse.right.released = false;
 }
 
 #endif //PLATFORM_H
